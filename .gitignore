@@ -1,0 +1,14 @@
+# Virtual env e dependências locais
+.venv/
+__pycache__/
+*.pyc
+
+# Configs sensíveis
+.env
+
+# Logs e arquivos gerados
+logs/
+*.jsonl
+
+# Sistema
+.DS_Store
