@@ -38,6 +38,9 @@ let recog = null;
 let isRecording = false;
 let currentOpenedLog = null;
 
+// player de áudio reutilizável para voz do Orlem
+const orlemAudio = new Audio();
+
 // ===============================
 // AUX
 // ===============================
@@ -76,6 +79,44 @@ function setWsStatus(online) {
 }
 
 // ===============================
+// FALA DO ORLEM (TTS)
+// ===============================
+async function speakText(text) {
+  // evita ligar TTS pra vazio
+  if (!text || typeof text !== "string" || !text.trim()) return;
+
+  try {
+    const res = await fetch("/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+
+    if (!res.ok) {
+      console.warn("Falha no TTS:", res.status);
+      return;
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    // usa sempre o mesmo elemento de áudio
+    orlemAudio.src = url;
+    orlemAudio.onended = () => {
+      URL.revokeObjectURL(url);
+    };
+
+    orlemAudio
+      .play()
+      .catch((err) => {
+        console.warn("Navegador bloqueou autoplay de áudio:", err);
+      });
+  } catch (err) {
+    console.error("Erro ao reproduzir voz:", err);
+  }
+}
+
+// ===============================
 // WS
 // ===============================
 function connectWS() {
@@ -100,6 +141,8 @@ function connectWS() {
     } catch (e) {
       // mensagem simples de texto
       addMessage("orlem", event.data);
+      // se o backend mandar texto puro, ainda assim podemos falar
+      speakText(event.data);
       return;
     }
 
@@ -118,30 +161,41 @@ function connectWS() {
     }
 
     if (data.type === "answer") {
-      addMessage("orlem", data.answer || "");
+      const texto = data.answer || "";
+      addMessage("orlem", texto);
+      speakText(texto);
       return;
     }
 
     if (data.type === "summary") {
-      addMessage("orlem", "📄 RESUMO: " + (data.answer || ""));
+      const texto = "RESUMO: " + (data.answer || "");
+      addMessage("orlem", "📄 " + texto);
+      speakText(texto);
       return;
     }
 
     if (data.type === "info") {
-      addMessage("system", data.answer || "");
+      const texto = data.answer || "";
+      addMessage("system", texto);
+      // infos curtas também podem ser faladas
+      speakText(texto);
       return;
     }
 
     if (data.type === "diarize") {
-      addMessage("orlem", "🧑‍🤝‍🧑 " + (data.answer || ""));
+      const texto = data.answer || "";
+      addMessage("orlem", "🧑‍🤝‍🧑 " + texto);
+      speakText(texto);
       return;
     }
 
     if (data.type === "end_summary") {
+      const texto = "Reunião encerrada. Resumo final: " + (data.answer || "");
       addMessage(
         "orlem",
         "✅ Reunião encerrada.\n\n📄 RESUMO FINAL:\n" + (data.answer || "")
       );
+      speakText(texto);
       return;
     }
 

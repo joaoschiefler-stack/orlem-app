@@ -1,9 +1,7 @@
 # db.py
 from typing import List, Dict, Optional
-
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker, Session
-
 from models import Base, User, Meeting, Message
 
 # ================================
@@ -71,11 +69,16 @@ def create_meeting(
     title: str = "Reunião local",
     source: str = "local",
 ) -> int:
-    """Cria uma reunião e retorna o id."""
+    """
+    Cria uma reunião e retorna o id.
+
+    OBS: o modelo Meeting tem workspace_id NOT NULL.
+    Como estamos em modo single-workspace, usamos workspace_id=1 sempre.
+    """
     db = SessionLocal()
     try:
         meeting = Meeting(
-            user_id=user_id,
+            workspace_id=1,   # 🔥 FIX: obrigatório para não quebrar NOT NULL
             title=title,
             source=source,
         )
@@ -88,27 +91,29 @@ def create_meeting(
 
 
 def list_meetings(user_id: int) -> List[Dict]:
-    """Lista reuniões de um usuário em ordem decrescente de criação."""
+    """
+    Lista reuniões em ordem decrescente de criação.
+
+    OBS: user_id é ignorado porque Meeting não tem essa coluna.
+    """
     db = SessionLocal()
     try:
         meetings = (
             db.execute(
-                select(Meeting)
-                .where(Meeting.user_id == user_id)
-                .order_by(Meeting.created_at.desc())
+                select(Meeting).order_by(Meeting.created_at.desc())
             )
             .scalars()
             .all()
         )
 
-        out = []
+        out: List[Dict] = []
         for m in meetings:
             out.append(
                 {
                     "id": m.id,
                     "title": m.title,
                     "source": m.source,
-                    "status": m.status,
+                    "status": getattr(m, "status", None),
                     "created_at": m.created_at.isoformat() if m.created_at else None,
                 }
             )
@@ -118,14 +123,16 @@ def list_meetings(user_id: int) -> List[Dict]:
 
 
 def get_last_meeting(user_id: int) -> Optional[Dict]:
-    """Última reunião de um usuário (se existir)."""
+    """
+    Última reunião criada (se existir).
+
+    OBS: user_id é ignorado porque Meeting não tem essa coluna.
+    """
     db = SessionLocal()
     try:
         m = (
             db.execute(
-                select(Meeting)
-                .where(Meeting.user_id == user_id)
-                .order_by(Meeting.created_at.desc())
+                select(Meeting).order_by(Meeting.created_at.desc())
             )
             .scalars()
             .first()
@@ -137,7 +144,7 @@ def get_last_meeting(user_id: int) -> Optional[Dict]:
             "id": m.id,
             "title": m.title,
             "source": m.source,
-            "status": m.status,
+            "status": getattr(m, "status", None),
             "created_at": m.created_at.isoformat() if m.created_at else None,
         }
     finally:
@@ -184,7 +191,7 @@ def get_meeting_messages(meeting_id: int) -> List[Dict]:
             .all()
         )
 
-        out = []
+        out: List[Dict] = []
         for m in msgs:
             out.append(
                 {
