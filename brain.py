@@ -238,6 +238,39 @@ def is_training(s: str) -> bool:
     return _has(s, ["treinamento", "onboard", "onboarding", "apresentar pro time"])
 
 # ---------------------------------------------------------
+# 3.1 Detector de pedido vago (ADIÇÃO)
+# ---------------------------------------------------------
+VAGUE_TRIGGERS = [
+    "ideia", "ideias", "brainstorm", "como começar", "como podemos",
+    "post", "título", "titulo", "legenda", "copy", "hook",
+    "sugestões", "sugestao", "sugestão", "ajuda com", "o que fazer",
+    "me ajuda", "planejar", "plano", "campanha", "conteúdo", "conteudo"
+]
+
+def needs_clarification(s: str) -> bool:
+    s = _norm(s)
+    if len(s) < 12:  # muito curto
+        return True
+    # se contém gatilhos vagos
+    if any(k in s for k in VAGUE_TRIGGERS):
+        # se já trouxe contexto “rico”, não precisa (heurística simples)
+        rich_signals = ["objetivo", "público", "publico", "formato", "canal", "restrição", "restricoes",
+                        "prazo", "deadline", "kpi", "critério de sucesso", "criterio de sucesso"]
+        if not any(k in s for k in rich_signals):
+            return True
+    return False
+
+CLARIFY_MESSAGE = (
+    "Para eu acertar em cheio, rapidinho:\n"
+    "1) Qual é o **objetivo** principal?\n"
+    "2) Quem é o **público-alvo**?\n"
+    "3) Qual **formato/canal** (ex.: reunião, e-mail, landing, Instagram…)?\n"
+    "4) Alguma **restrição** (tom, tamanho, palavras proibidas, políticas)?\n"
+    "5) **Prazo** e **critério de sucesso**?\n"
+    "Manda esses 5 pontos e eu devolvo algo cirúrgico. 😉"
+)
+
+# ---------------------------------------------------------
 # 4. Geradores especializados
 # ---------------------------------------------------------
 async def gen_client_message(context: str) -> str:
@@ -397,6 +430,11 @@ async def ask_orlem(user_message: str) -> str:
     msg = user_message or ""
     low = _norm(msg)
 
+    # (ADIÇÃO) — Perguntas de clarificação primeiro para pedidos vagos
+    if needs_clarification(low):
+        return CLARIFY_MESSAGE
+
+    # Rotas específicas (mantidas)
     if is_client_message(low):
         return await gen_client_message(msg)
     if is_delay(low):
@@ -456,3 +494,23 @@ async def extract_actions(transcript: str) -> str:
 # compat com app.py antigo
 async def client_status_message(contexto: str) -> str:
     return await gen_client_message(contexto)
+
+# ===============================
+# 8. Diarização (placeholder)
+# ===============================
+async def diarize_transcript(transcript: str) -> str:
+    """
+    Recebe o transcript bruto e devolve uma versão "marcada" por falante.
+    Hoje é só um placeholder pra não quebrar o app.
+    """
+    if not transcript:
+        return "Nenhum conteúdo para diarizar."
+
+    linhas = [l.strip() for l in transcript.split("\n") if l.strip()]
+    saida = []
+    speaker = 1
+    for linha in linhas:
+        saida.append(f"Speaker {speaker}: {linha}")
+        speaker = 2 if speaker == 1 else 1
+
+    return "\n".join(saida)

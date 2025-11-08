@@ -1,77 +1,119 @@
 # db.py
-import sqlite3
+from __future__ import annotations
+import json
 from datetime import datetime
-from pathlib import Path
+from typing import List, Dict, Any, Optional
 
-DB_PATH = Path("orlem.db")
+from sqlalchemy import create_engine, select, func
+from sqlalchemy.orm import sessionmaker
+
+from models import Base, User, Workspace, Member, Meeting, Message
+
+DB_URL = "sqlite:///orlem.db"
+
+engine = create_engine(DB_URL, echo=False, future=True)
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
 
-def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def init_db() -> None:
+    Base.metadata.create_all(engine)
 
 
-def init_db():
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            ts TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL
+def _get_or_create_default_workspace(session, user_id: int) -> Workspace:
+    ws = session.execute(
+        select(Workspace).join(Member, Member.workspace_id == Workspace.id).where(Member.user_id == user_id)
+    ).scalar_one_or_none()
+    if ws:
+        return ws
+    # cria workspace + membership
+    ws = Workspace(name="Default Workspace")
+    session.add(ws)
+    session.flush()
+    m = Member(user_id=user_id, workspace_id=ws.id, role="owner")
+    session.add(m)
+    return ws
+
+
+def get_or_create_default_user() -> int:
+    with SessionLocal() as session:
+        user = session.execute(select(User).order_by(User.id)).scalar_one_or_none()
+        if not user:
+            user = User(name="Default User", email=None)
+            session.add(user)
+            session.flush()
+        _get_or_create_default_workspace(session, user.id)
+        session.commit()
+        return user.id
+
+
+def create_meeting(user_id: int, title: str, source: str = "local") -> int:
+    with SessionLocal() as session:
+        ws = _get_or_create_default_workspace(session, user_id)
+        meeting = Meeting(workspace_id=ws.id, title=title, source=source, status="open")
+        session.add(meeting)
+        session.flush()
+        session.commit()
+        return meeting.id
+
+
+def list_meetings(user_id: int, limit: int = 30) -> List[Dict[str, Any]]:
+    with SessionLocal() as session:
+        ws = _get_or_create_default_workspace(session, user_id)
+        rows = (
+            session.execute(
+                select(Meeting)
+                .where(Meeting.workspace_id == ws.id)
+                .order_by(Meeting.created_at.desc())
+                .limit(limit)
+            )
+            .scalars()
+            .all()
         )
-        """
-    )
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)")
-    conn.commit()
-    conn.close()
+        return [
+            {
+                "id": r.id,
+                "title": r.title,
+                "status": r.status,
+                "source": r.source,
+                "created_at": r.created_at.isoformat(),
+                "updated_at": r.updated_at.isoformat(),
+            }
+            for r in rows
+        ]
 
 
-def save_message(session_id: str, role: str, content: str):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO messages (session_id, ts, role, content) VALUES (?, ?, ?, ?)",
-        (session_id, datetime.utcnow().isoformat(), role, content),
-    )
-    conn.commit()
-    conn.close()
+def add_message(meeting_id: int, role: str, content: str, meta: Optional[Dict[str, Any]] = None) -> int:
+    with SessionLocal() as session:
+        msg = Message(
+            meeting_id=meeting_id,
+            role=role,
+            content=content,
+            meta_json=(json.dumps(meta, ensure_ascii=False) if meta else None),
+        )
+        session.add(msg)
+        session.flush()
+        session.commit()
+        return msg.id
 
 
-def list_sessions(limit: int = 100):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT session_id, MAX(ts) AS last_ts
-        FROM messages
-        GROUP BY session_id
-        ORDER BY last_ts DESC
-        LIMIT ?
-        """,
-        (limit,),
-    )
-    rows = cur.fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-
-def get_session_messages(session_id: str):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT ts, role, content
-        FROM messages
-        WHERE session_id = ?
-        ORDER BY ts ASC
-        """,
-        (session_id,),
-    )
-    rows = cur.fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+def get_meeting_messages(meeting_id: int) -> List[Dict[str, Any]]:
+    with SessionLocal() as session:
+        msgs = (
+            session.execute(
+                select(Message).where(Message.meeting_id == meeting_id).order_by(Message.created_at.asc())
+            )
+            .scalars()
+            .all()
+        )
+        out: List[Dict[str, Any]] = []
+        for m in msgs:
+            out.append(
+                {
+                    "id": m.id,
+                    "role": m.role,
+                    "content": m.content,
+                    "meta_json": m.meta_json,
+                    "created_at": m.created_at.isoformat(),
+                }
+            )
+        return out

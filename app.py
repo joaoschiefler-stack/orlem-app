@@ -1,216 +1,222 @@
 # app.py
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse, PlainTextResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
 import os
 import json
-from datetime import datetime
-from uuid import uuid4
+from typing import Dict, Any, Optional
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
 
 from brain import (
     ask_orlem,
     summarize_transcript,
-    extract_decisions,
-    extract_actions,
+    diarize_transcript,
     client_status_message,
 )
-
-app = FastAPI(title="Orlem - Assistente de Reuniões com IA")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+from db import (
+    init_db,
+    get_or_create_default_user,
+    create_meeting,
+    list_meetings,
+    add_message,
+    get_meeting_messages,
 )
 
+load_dotenv()
+
+app = FastAPI(title="Orlem - Assistente de Reuniões com IA")
+init_db()
+
+# Frontend
 app.mount("/web", StaticFiles(directory="web"), name="web")
-
-LOG_DIR = "logs"
-os.makedirs(LOG_DIR, exist_ok=True)
-
-
-def _new_session_id() -> str:
-    return f"sess-{datetime.now().strftime('%Y%m%d-%H%M%S')}{uuid4().hex[:4]}"
-
-
-def append_log(session_id: str, role: str, content: str) -> None:
-    os.makedirs(LOG_DIR, exist_ok=True)
-    path = os.path.join(LOG_DIR, f"{session_id}.jsonl")
-    entry = {
-        "ts": datetime.utcnow().isoformat(),
-        "role": role,
-        "content": content,
-    }
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-
-
-def list_logs() -> list[str]:
-    return [f for f in os.listdir(LOG_DIR) if f.endswith(".jsonl")]
-
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return FileResponse("web/index.html")
 
+# -----------------------
+# LOGS EM ARQUIVO
+# -----------------------
+LOG_DIR = "logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+
+def _log_filename(session_id: str) -> str:
+    return os.path.join(LOG_DIR, f"{session_id}.jsonl")
+
+def append_to_log(session_id: str, role: str, content: str):
+    os.makedirs(LOG_DIR, exist_ok=True)
+    with open(_log_filename(session_id), "a", encoding="utf-8") as f:
+        f.write(json.dumps({"role": role, "content": content}, ensure_ascii=False) + "\n")
+
+def list_log_files():
+    return sorted([f for f in os.listdir(LOG_DIR) if f.endswith(".jsonl")], reverse=True)
 
 @app.get("/logs")
-async def get_logs():
-    return {"logs": list_logs()}
+async def list_logs():
+    return {"logs": list_log_files()}
 
-
-@app.get("/logs/{logname}", response_class=PlainTextResponse)
-async def get_log_content(logname: str):
-    path = os.path.join(LOG_DIR, logname)
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="Log não encontrado")
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
-
+@app.get("/logs/{logname}")
+async def get_log(logname: str):
+    filepath = os.path.join(LOG_DIR, logname)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="log não encontrado")
+    with open(filepath, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/plain")
 
 @app.post("/logs/rename")
-async def rename_log(payload: dict):
+async def rename_log(payload: Dict[str, Any]):
     old_name = payload.get("old_name")
     new_name = payload.get("new_name")
     if not old_name or not new_name:
         raise HTTPException(status_code=400, detail="old_name e new_name são obrigatórios")
-
     old_path = os.path.join(LOG_DIR, old_name)
+    new_path = os.path.join(LOG_DIR, new_name + ("" if new_name.endswith(".jsonl") else ".jsonl"))
     if not os.path.exists(old_path):
-        raise HTTPException(status_code=404, detail="Log não encontrado")
-
-    if not new_name.endswith(".jsonl"):
-        new_name = new_name + ".jsonl"
-
-    new_path = os.path.join(LOG_DIR, new_name)
+        raise HTTPException(status_code=404, detail="log não encontrado")
     os.rename(old_path, new_path)
-    return {"ok": True, "new_name": new_name}
+    return {"ok": True, "new_name": os.path.basename(new_path)}
 
+# -----------------------
+# API (fase 2)
+# -----------------------
+@app.get("/api/meetings")
+async def api_list_meetings():
+    user_id = get_or_create_default_user()
+    meetings = list_meetings(user_id)
+    return {"meetings": meetings}
+
+@app.get("/api/meetings/{meeting_id}")
+async def api_get_meeting(meeting_id: int):
+    msgs = get_meeting_messages(meeting_id)
+    return {"messages": msgs}
+
+# opcional: criar/recuperar reunião para um session_id
+@app.get("/api/meeting/open")
+async def api_meeting_open(session_id: str = Query(...)):
+    """
+    Retorna meeting_id existente para session_id (se já houver mensagens),
+    senão None — criação passa a ser on-demand (primeira mensagem).
+    """
+    user_id = get_or_create_default_user()
+    # tenta achar uma reunião com mensagens para este session_id (usando nome do log)
+    logname = f"{session_id}.jsonl"
+    has_log = os.path.exists(os.path.join(LOG_DIR, logname))
+    return {"meeting_id": None, "has_log": has_log}
+
+# -----------------------
+# WEBSOCKET
+# -----------------------
+# session_id -> meeting_id
+active_sessions: Dict[str, int] = {}
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
+async def websocket_endpoint(ws: WebSocket):
+    await ws.accept()
 
-    session_id = _new_session_id()
-    await websocket.send_text(
-        json.dumps(
-            {
-                "type": "status",
-                "session_id": session_id,
-                "answer": "Conectado. Reunião será salva automaticamente.",
-            },
-            ensure_ascii=False,
-        )
-    )
+    # recebemos session_id do client (persistido no localStorage)
+    # caso não venha, criaremos um temporário e devolveremos pelo status
+    params = ws.query_params
+    session_id: Optional[str] = params.get("session_id") or None
+    if session_id is None:
+        session_id = "session-"  # o client vai sobrescrever após o primeiro status
+    # meeting_id é criado apenas no PRIMEIRO envio de mensagem
+    meeting_id: Optional[int] = None
+    user_id = get_or_create_default_user()
+
+    # status inicial
+    status_payload = await client_status_message(session_id)
+    try:
+        await ws.send_text(json.dumps(status_payload))
+    except WebSocketDisconnect:
+        return
 
     try:
         while True:
-            raw = await websocket.receive_text()
+            data = await ws.receive_text()
 
+            # tenta json
             try:
-                data = json.loads(raw)
+                payload = json.loads(data)
             except json.JSONDecodeError:
-                data = {"text": raw}
+                payload = {"text": data}
 
-            text = data.get("text", "").strip()
-            action = data.get("action")
-            req_session_id = data.get("session_id") or session_id
+            action = payload.get("action")
+            text = payload.get("text")
+            sess_from_front = payload.get("session_id") or session_id
+            session_id = sess_from_front  # normaliza
 
-            # ======== AÇÃO: RESUMIR =========
+            # cria meeting apenas no primeiro envio real de mensagem do usuário
+            if meeting_id is None and (text or action in {"summarize","diarize","end"}):
+                meeting_id = create_meeting(user_id, title="Reunião via WebSocket", source="local")
+                active_sessions[session_id] = meeting_id
+                # dá um pequeno status de sessão/meeting
+                await ws.send_text(json.dumps({
+                    "type":"info",
+                    "answer": f"🔗 sessão vinculada à reunião #{meeting_id}"
+                }))
+
+            # Ações
             if action == "summarize":
-                target_log = data.get("target_log")  # nome do arquivo .jsonl vindo do front
-                transcript = ""
-
-                # 1) se veio alvo -> resumir o log clicado
-                if target_log:
-                    path = os.path.join(LOG_DIR, target_log)
-                    if os.path.exists(path):
-                        with open(path, "r", encoding="utf-8") as f:
-                            parts = []
-                            for line in f:
-                                try:
-                                    obj = json.loads(line)
-                                    parts.append(f"{obj.get('role')}: {obj.get('content')}")
-                                except Exception:
-                                    pass
-                            transcript = "\n".join(parts)
-                    else:
-                        transcript = "Log não encontrado."
-                else:
-                    # 2) senão, resumir sessão atual
-                    path = os.path.join(LOG_DIR, f"{req_session_id}.jsonl")
-                    if os.path.exists(path):
-                        with open(path, "r", encoding="utf-8") as f:
-                            parts = []
-                            for line in f:
-                                try:
-                                    obj = json.loads(line)
-                                    parts.append(f"{obj.get('role')}: {obj.get('content')}")
-                                except Exception:
-                                    pass
-                            transcript = "\n".join(parts)
-                    else:
-                        transcript = "Nenhum conteúdo salvo para esta sessão."
-
-                summary = await summarize_transcript(transcript)
-                await websocket.send_text(
-                    json.dumps(
-                        {
-                            "type": "summary",
-                            "session_id": req_session_id,
-                            "answer": summary,
-                        },
-                        ensure_ascii=False,
-                    )
-                )
+                if meeting_id is None:
+                    await ws.send_text(json.dumps({"type":"warn","answer":"⚠️ Sem mensagens para resumir."}))
+                    continue
+                msgs = get_meeting_messages(meeting_id)
+                transcript = "\n".join([f"{m['role']}: {m['content']}" for m in msgs])
+                answer = await summarize_transcript(transcript)
+                append_to_log(session_id, "orlem", "[RESUMO] " + answer)
+                add_message(meeting_id, "orlem", "[RESUMO] " + answer)
+                await ws.send_text(json.dumps({"type": "summary", "answer": answer}))
                 continue
 
-            # ======== AÇÃO: SAVE (já salva automático) =========
-            if action == "save":
-                await websocket.send_text(
-                    json.dumps(
-                        {
-                            "type": "info",
-                            "session_id": req_session_id,
-                            "answer": "Reunião já está sendo salva automaticamente em logs/.",
-                        },
-                        ensure_ascii=False,
-                    )
-                )
-                continue
-
-            # ======== AÇÃO: DIARIZE (fake) =========
             if action == "diarize":
-                await websocket.send_text(
-                    json.dumps(
-                        {
-                            "type": "diarize",
-                            "session_id": req_session_id,
-                            "answer": "Diarização (mock): Speaker 1 (João), Speaker 2 (Maria), Speaker 3 (Pedro).",
-                        },
-                        ensure_ascii=False,
-                    )
-                )
+                if meeting_id is None:
+                    await ws.send_text(json.dumps({"type":"warn","answer":"⚠️ Sem mensagens para diarizar."}))
+                    continue
+                msgs = get_meeting_messages(meeting_id)
+                transcript = "\n".join([f"{m['role']}: {m['content']}" for m in msgs])
+                answer = await diarize_transcript(transcript)
+                append_to_log(session_id, "orlem", "[DIARIZAÇÃO] " + answer)
+                add_message(meeting_id, "orlem", "[DIARIZAÇÃO] " + answer)
+                await ws.send_text(json.dumps({"type": "diarize", "answer": answer}))
                 continue
 
-            # ======== MENSAGEM NORMAL =========
+            if action == "end":
+                if meeting_id is None:
+                    await ws.send_text(json.dumps({"type":"warn","answer":"⚠️ Nenhuma mensagem na reunião."}))
+                    continue
+                await ws.send_text(json.dumps({"type":"info","answer":"🛑 Encerrando reunião... gerando resumo."}))
+                msgs = get_meeting_messages(meeting_id)
+                transcript = "\n".join([f"{m['role']}: {m['content']}" for m in msgs])
+                if not transcript.strip():
+                    await ws.send_text(json.dumps({"type":"warn","answer":"⚠️ Sem mensagens para resumir."}))
+                else:
+                    answer = await summarize_transcript(transcript)
+                    append_to_log(session_id, "orlem", "[RESUMO] " + answer)
+                    add_message(meeting_id, "orlem", "[RESUMO] " + answer)
+                    await ws.send_text(json.dumps({"type": "summary", "answer": answer}))
+                continue
+
+            # Mensagem comum do usuário
             if text:
-                append_log(req_session_id, "user", text)
+                if meeting_id is None:
+                    meeting_id = create_meeting(user_id, title="Reunião via WebSocket", source="local")
+                    active_sessions[session_id] = meeting_id
+                    await ws.send_text(json.dumps({
+                        "type":"info",
+                        "answer": f"🔗 sessão vinculada à reunião #{meeting_id}"
+                    }))
+
+                append_to_log(session_id, "user", text)
+                add_message(meeting_id, "user", text)
                 answer = await ask_orlem(text)
-                append_log(req_session_id, "assistant", answer)
-                await websocket.send_text(
-                    json.dumps(
-                        {
-                            "type": "answer",
-                            "session_id": req_session_id,
-                            "answer": answer,
-                        },
-                        ensure_ascii=False,
-                    )
-                )
+                append_to_log(session_id, "orlem", answer)
+                add_message(meeting_id, "orlem", answer)
+                await ws.send_text(json.dumps({"type": "answer", "answer": answer}))
+                continue
+
+            # fallback
+            await ws.send_text(json.dumps({"type":"warn","answer":"⚠️ Comando desconhecido."}))
 
     except WebSocketDisconnect:
-        print("Cliente desconectado")
+        return

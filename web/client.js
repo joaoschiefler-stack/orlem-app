@@ -1,319 +1,132 @@
-// ===============================
-// CONFIG
-// ===============================
-const WS_URL = "ws://127.0.0.1:8000/ws";
+// web/client.js
+let ws = null;
+let sessionId = localStorage.getItem("orlem_session_id") || `session-${crypto.randomUUID().slice(0,8)}`;
+localStorage.setItem("orlem_session_id", sessionId);
 
-// elementos
-const sendBtn = document.getElementById("sendBtn");
-const utterance = document.getElementById("utterance");
-const timeline = document.getElementById("timeline");
+const $ = (q) => document.querySelector(q);
+const timeline = $("#timeline");
+const wsStatus = $("#ws-status");
+const currentSession = $("#current-session");
 
-const wsStatus = document.getElementById("ws-status");
-const summarizeBtn = document.getElementById("summarize");
-const saveBtn = document.getElementById("save");
-const renameBtn = document.getElementById("rename");
-const diarizeBtn = document.getElementById("diarize");
-const exportBtn = document.getElementById("export");
-
-const logsList = document.getElementById("logs-list");
-const refreshLogsBtn = document.getElementById("refresh-logs");
-const currentSessionSpan = document.getElementById("current-session");
-
-const micBtn = document.getElementById("micBtn");
-const micDot = document.getElementById("mic-dot");
-
-// estado
-let socket = null;
-let currentSessionId = null;
-let recog = null;
-let isRecording = false;
-let currentOpenedLog = null;
-
-// ===============================
-// AUX
-// ===============================
-function addMessage(who, text) {
+function pillOnline(on){
+  if(on){ wsStatus.classList.add("online"); wsStatus.innerHTML = `<span class="dot"></span>conectado`; }
+  else { wsStatus.classList.remove("online"); wsStatus.innerHTML = `<span class="dot"></span>desconectado`; }
+}
+function pushMsg(role, text, cls=""){
   const div = document.createElement("div");
-  div.classList.add("msg");
-  if (who === "user") div.classList.add("user");
-  else if (who === "orlem") div.classList.add("bot");
-  else div.classList.add("system");
+  div.className = `msg ${cls} ${role==='user'?'user':role==='system'?'system':'bot'}`;
   div.textContent = text;
   timeline.appendChild(div);
   timeline.scrollTop = timeline.scrollHeight;
 }
 
-function setSessionLabel(text) {
-  if (currentSessionSpan) {
-    currentSessionSpan.textContent = text;
-  }
-}
-
-// ===============================
-// WS
-// ===============================
-function connectWS() {
-  socket = new WebSocket(WS_URL);
-
-  socket.onopen = () => {
-    if (wsStatus) {
-      wsStatus.textContent = "conectado";
-      wsStatus.classList.remove("offline");
-      wsStatus.classList.add("online");
-    }
-  };
-
-  socket.onmessage = (event) => {
-    let data = null;
-    try {
-      data = JSON.parse(event.data);
-    } catch (e) {
-      addMessage("orlem", event.data);
-      return;
-    }
-
-    if (data.type === "status") {
-      if (!currentSessionId) {
-        currentSessionId = data.session_id;
-        setSessionLabel("sessão: " + currentSessionId);
-      }
-      return;
-    }
-
-    if (data.type === "answer") {
-      addMessage("orlem", data.answer);
-      return;
-    }
-
-    if (data.type === "summary") {
-      addMessage("orlem", "📄 RESUMO: " + data.answer);
-      return;
-    }
-
-    if (data.type === "info") {
-      addMessage("system", data.answer);
-      return;
-    }
-
-    if (data.type === "diarize") {
-      addMessage("orlem", "🧑‍🤝‍🧑 " + data.answer);
-      return;
-    }
-  };
-
-  socket.onclose = () => {
-    if (wsStatus) {
-      wsStatus.textContent = "desconectado";
-      wsStatus.classList.remove("online");
-      wsStatus.classList.add("offline");
-    }
-    setTimeout(connectWS, 2000);
-  };
-}
-
-// ===============================
-// ENVIO
-// ===============================
-sendBtn.onclick = () => {
-  const text = utterance.value.trim();
-  if (!text || !socket || socket.readyState !== WebSocket.OPEN) return;
-  addMessage("user", text);
-  socket.send(JSON.stringify({ text, session_id: currentSessionId }));
-  utterance.value = "";
-};
-utterance.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendBtn.onclick();
-});
-
-// ===============================
-// AÇÕES DE TOPO
-// ===============================
-summarizeBtn.onclick = () => {
-  if (!socket || socket.readyState !== WebSocket.OPEN) return;
-
-  // se tem log aberto -> manda esse
-  if (currentOpenedLog) {
-    socket.send(
-      JSON.stringify({
-        action: "summarize",
-        session_id: currentSessionId,
-        target_log: currentOpenedLog,
-      })
-    );
-  } else {
-    // senão, resumo da sessão atual
-    socket.send(
-      JSON.stringify({
-        action: "summarize",
-        session_id: currentSessionId,
-      })
-    );
-  }
-};
-
-saveBtn.onclick = () => {
-  if (!socket || socket.readyState !== WebSocket.OPEN) return;
-  socket.send(JSON.stringify({ action: "save", session_id: currentSessionId }));
-};
-
-renameBtn.onclick = async () => {
-  let current = currentOpenedLog || currentSessionId;
-  if (!current) {
-    alert("Nenhuma sessão para renomear.");
-    return;
-  }
-  const newName = window.prompt("Nome novo para o log (ex: cliente-acme-demo):");
-  if (!newName) return;
-
-  const body = {
-    old_name: current.endsWith(".jsonl") ? current : current + ".jsonl",
-    new_name: newName,
-  };
-
-  const res = await fetch("/logs/rename", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const data = await res.json();
-    alert("Erro ao renomear: " + (data.detail || res.status));
-    return;
-  }
-
+async function loadLogs(){
+  const res = await fetch("/logs");
   const data = await res.json();
-  currentOpenedLog = data.new_name;
-  setSessionLabel("log: " + data.new_name);
-  loadLogs();
-};
-
-diarizeBtn.onclick = () => {
-  if (!socket || socket.readyState !== WebSocket.OPEN) return;
-  socket.send(JSON.stringify({ action: "diarize", session_id: currentSessionId }));
-};
-
-exportBtn.onclick = async () => {
-  const filename = currentOpenedLog || (currentSessionId ? currentSessionId + ".jsonl" : null);
-  if (!filename) {
-    alert("Nenhum log selecionado pra exportar.");
-    return;
-  }
-  const res = await fetch("/logs/" + filename);
-  if (!res.ok) {
-    alert("Não consegui baixar o log.");
-    return;
-  }
-  const text = await res.text();
-  const blob = new Blob([text], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-};
-
-// ===============================
-// LOGS
-// ===============================
-function loadLogs() {
-  fetch("/logs")
-    .then((r) => r.json())
-    .then((data) => {
-      logsList.innerHTML = "";
-      (data.logs || []).forEach((logname) => {
-        const item = document.createElement("div");
-        item.textContent = logname;
-        item.className = "log-item";
-        item.onclick = () => viewLog(logname, item);
-        logsList.appendChild(item);
-      });
-    })
-    .catch((err) => console.error(err));
-}
-
-function viewLog(logname, itemEl) {
-  document.querySelectorAll(".log-item").forEach((el) => el.classList.remove("active"));
-  itemEl.classList.add("active");
-  currentOpenedLog = logname;
-
-  fetch("/logs/" + logname)
-    .then((r) => r.text())
-    .then((text) => {
-      timeline.innerHTML = "";
-      const lines = text.split("\n").filter(Boolean);
-      lines.forEach((line) => {
-        try {
+  const box = $("#logs-list"); box.innerHTML = "";
+  data.logs.forEach(name=>{
+    const item = document.createElement("div");
+    item.className = "log-item"; item.textContent = name;
+    item.onclick = async ()=>{
+      const r = await fetch(`/logs/${name}`);
+      const txt = await r.text();
+      pushMsg("system", `Abrindo log: ${name}`);
+      txt.trim().split("\n").forEach(line=>{
+        try{
           const obj = JSON.parse(line);
-          const role = obj.role;
-          const content = obj.content;
-          addMessage(role === "user" ? "user" : "orlem", content);
-        } catch (e) {
-          addMessage("system", line);
-        }
+          pushMsg(obj.role, obj.content, obj.role==="orlem"?"bot":"");
+        }catch{}
       });
-      setSessionLabel("log: " + logname);
-    });
+    };
+    box.appendChild(item);
+  });
 }
 
-refreshLogsBtn.onclick = loadLogs;
+async function loadMeetings(){
+  const res = await fetch("/api/meetings");
+  const data = await res.json();
+  const box = $("#meetings-list"); box.innerHTML = "";
+  data.meetings.forEach(m=>{
+    const item = document.createElement("div");
+    item.className = "log-item";
+    item.textContent = `${m.title} — ${m.created_at} #${m.id}`;
+    item.onclick = async ()=>{
+      pushMsg("system", `Abrindo reunião do DB: #${m.id} — ${m.title}`);
+      const r = await fetch(`/api/meetings/${m.id}`);
+      const js = await r.json();
+      const msgs = js.messages || [];
+      if(!msgs.length){ pushMsg("system","Esta reunião não tem mensagens salvas."); return; }
+      msgs.forEach(mm=>{
+        const role = mm.role; const txt = mm.content;
+        pushMsg(role, txt, role==="orlem"?"bot":"");
+      });
+    };
+    box.appendChild(item);
+  });
+}
 
-// ===============================
-// MIC
-// ===============================
-function initSTT() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    alert("Seu navegador não suporta reconhecimento de voz (use Chrome).");
-    return null;
-  }
-  const rec = new SpeechRecognition();
-  rec.lang = "pt-BR";
-  rec.continuous = false;
-  rec.interimResults = false;
-  rec.onresult = (e) => {
-    const text = e.results[0][0].transcript;
-    utterance.value = text;
-    sendBtn.onclick();
+function connectWs(){
+  const url = `ws://${location.host}/ws?session_id=${encodeURIComponent(sessionId)}`;
+  ws = new WebSocket(url);
+
+  ws.onopen = ()=>{
+    pillOnline(true);
+    currentSession.textContent = `log: ${sessionId}.jsonl`;
   };
-  rec.onerror = (e) => {
-    console.warn("erro no mic", e);
-    stopRecording();
+  ws.onclose = ()=> pillOnline(false);
+
+  ws.onmessage = (ev)=>{
+    try{
+      const data = JSON.parse(ev.data);
+      if(data.type==="answer"){ pushMsg("orlem", data.answer, "bot"); }
+      else if(data.type==="summary"){ pushMsg("orlem", "📄 [RESUMO] " + data.answer, "bot"); }
+      else if(data.type==="diarize"){ pushMsg("orlem", "🧑‍🤝‍🧑 [DIARIZAÇÃO] " + data.answer, "bot"); }
+      else if(data.type==="info"){ pushMsg("system", data.answer); }
+      else if(data.type==="warn"){ pushMsg("system", data.answer, "warn"); }
+      else{
+        // status inicial ou payload não tipado
+        pushMsg("system", "Conexão pronta.");
+      }
+    }catch{
+      pushMsg("system", ev.data);
+    }
   };
-  rec.onend = () => {
-    stopRecording();
-  };
-  return rec;
 }
 
-function startRecording() {
-  if (!recog) recog = initSTT();
-  if (!recog) return;
-  isRecording = true;
-  micBtn.classList.add("recording");
-  micDot.classList.add("on");
-  recog.start();
-}
+$("#sendBtn").onclick = ()=>{
+  const txt = $("#utterance").value.trim();
+  if(!txt) return;
+  pushMsg("user", txt);
+  $("#utterance").value = "";
 
-function stopRecording() {
-  isRecording = false;
-  micBtn.classList.remove("recording");
-  micDot.classList.remove("on");
-  if (recog) {
-    try {
-      recog.stop();
-    } catch (e) {}
-  }
-}
-
-micBtn.onclick = () => {
-  if (isRecording) stopRecording();
-  else startRecording();
+  ws.send(JSON.stringify({ session_id: sessionId, text: txt }));
 };
 
-// ===============================
+$("#summarize").onclick = ()=> ws.send(JSON.stringify({ session_id: sessionId, action: "summarize" }));
+$("#diarize").onclick   = ()=> ws.send(JSON.stringify({ session_id: sessionId, action: "diarize" }));
+$("#endMeeting").onclick= ()=> ws.send(JSON.stringify({ session_id: sessionId, action: "end" }));
+$("#save").onclick      = ()=> pushMsg("system","✅ reunião já está sendo salva automaticamente.");
+$("#rename").onclick    = async ()=>{
+  const newName = prompt("Novo nome do log (sem .jsonl):", sessionId);
+  if(!newName) return;
+  const old = `${sessionId}.jsonl`;
+  const payload = { old_name: old, new_name: newName };
+  const res = await fetch("/logs/rename", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) });
+  if(res.ok){
+    sessionId = newName;
+    localStorage.setItem("orlem_session_id", sessionId);
+    currentSession.textContent = `log: ${sessionId}.jsonl`;
+    pushMsg("system", "✅ log renomeado.");
+    loadLogs();
+  }else{
+    pushMsg("system", "❌ não foi possível renomear.", "warn");
+  }
+};
+$("#export").onclick    = ()=> window.open(`/logs/${sessionId}.jsonl`, "_blank");
+$("#loadMeetings").onclick = ()=> loadMeetings();
+$("#refresh-logs").onclick = ()=> loadLogs();
+
 // BOOT
-// ===============================
-connectWS();
+connectWs();
 loadLogs();
+loadMeetings();
