@@ -1,7 +1,12 @@
 // ===============================
 // CONFIG
 // ===============================
-const WS_URL = "ws://127.0.0.1:8000/ws";
+
+// URL dinâmica, funciona em 127.0.0.1, localhost e depois em produção
+const WS_URL =
+  (location.protocol === "https:" ? "wss://" : "ws://") +
+  location.host +
+  "/ws";
 
 // elementos principais
 const sendBtn = document.getElementById("sendBtn");
@@ -15,12 +20,13 @@ const renameBtn = document.getElementById("rename");
 const diarizeBtn = document.getElementById("diarize");
 const exportBtn = document.getElementById("export");
 const endMeetingBtn = document.getElementById("endMeeting");
-const loadMeetingsBtn = document.getElementById("loadMeetings");
 
 const logsList = document.getElementById("logs-list");
 const refreshLogsBtn = document.getElementById("refresh-logs");
-const meetingsList = document.getElementById("meetings-list");
 const currentSessionSpan = document.getElementById("current-session");
+
+const meetingsList = document.getElementById("meetings-list");
+const loadMeetingsBtn = document.getElementById("loadMeetings");
 
 const micBtn = document.getElementById("micBtn");
 const micDot = document.getElementById("mic-dot");
@@ -31,7 +37,6 @@ let currentSessionId = null;
 let recog = null;
 let isRecording = false;
 let currentOpenedLog = null;
-let currentMeetingId = null;
 
 // ===============================
 // AUX
@@ -40,54 +45,52 @@ function addMessage(who, text) {
   if (!timeline) return;
   const div = document.createElement("div");
   div.classList.add("msg");
-
   if (who === "user") div.classList.add("user");
   else if (who === "orlem") div.classList.add("bot");
   else div.classList.add("system");
-
   div.textContent = text;
   timeline.appendChild(div);
   timeline.scrollTop = timeline.scrollHeight;
 }
 
 function setSessionLabel(text) {
-  if (currentSessionSpan) currentSessionSpan.textContent = text;
-}
-
-function setWsConnected(connected) {
-  if (!wsStatus) return;
-  wsStatus.classList.toggle("online", connected);
-  const dot = wsStatus.querySelector(".dot");
-  if (connected) {
-    wsStatus.lastChild.textContent = " conectado";
-    if (dot) dot.style.background = "#22c55e";
-  } else {
-    wsStatus.lastChild.textContent = " desconectado";
-    if (dot) dot.style.background = "#f97373";
+  if (currentSessionSpan) {
+    currentSessionSpan.textContent = text;
   }
 }
 
-// formatador bonitinho p/ datas das reuniões
-function formatDateTimeLabel(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const dia = String(d.getDate()).padStart(2, "0");
-  const mes = String(d.getMonth() + 1).padStart(2, "0");
-  const hora = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${dia}/${mes} ${hora}:${min}`;
+function setWsStatus(online) {
+  if (!wsStatus) return;
+  const pillLabel = wsStatus.querySelector(".pill-label") || wsStatus;
+  const dot = wsStatus.querySelector(".dot");
+  if (online) {
+    wsStatus.classList.add("online");
+    if (pillLabel) pillLabel.textContent = "conectado";
+  } else {
+    wsStatus.classList.remove("online");
+    if (pillLabel) pillLabel.textContent = "desconectado";
+  }
+  if (dot) {
+    dot.style.backgroundColor = online ? "#22c55e" : "#ef4444";
+  }
 }
 
 // ===============================
 // WS
 // ===============================
 function connectWS() {
-  socket = new WebSocket(WS_URL);
+  try {
+    socket = new WebSocket(WS_URL);
+  } catch (e) {
+    console.error("Erro ao abrir WebSocket:", e);
+    setWsStatus(false);
+    return;
+  }
 
   socket.onopen = () => {
-    setWsConnected(true);
-    addMessage("system", "Conexão pronta.");
+    console.log("WS aberto em", WS_URL);
+    setWsStatus(true);
+    addMessage("system", "🔌 Orlem conectado. Pode começar a reunião.");
   };
 
   socket.onmessage = (event) => {
@@ -95,102 +98,100 @@ function connectWS() {
     try {
       data = JSON.parse(event.data);
     } catch (e) {
+      // mensagem simples de texto
       addMessage("orlem", event.data);
       return;
     }
 
+    if (!data || typeof data !== "object") {
+      addMessage("system", String(event.data));
+      return;
+    }
+
+    // mensagens tipadas
     if (data.type === "status") {
-      // compat antigo, mas hoje quase não usamos
       if (!currentSessionId && data.session_id) {
         currentSessionId = data.session_id;
-        setSessionLabel("log: " + currentSessionId + ".jsonl");
+        setSessionLabel("sessão: " + currentSessionId);
       }
       return;
     }
 
     if (data.type === "answer") {
-      addMessage("orlem", data.answer);
+      addMessage("orlem", data.answer || "");
       return;
     }
 
     if (data.type === "summary") {
-      addMessage("orlem", "📄 [RESUMO] " + data.answer);
+      addMessage("orlem", "📄 RESUMO: " + (data.answer || ""));
       return;
     }
 
     if (data.type === "info") {
-      addMessage("system", data.answer);
+      addMessage("system", data.answer || "");
       return;
     }
 
     if (data.type === "diarize") {
-      addMessage("orlem", "🧑‍🤝‍🧑 " + data.answer);
+      addMessage("orlem", "🧑‍🤝‍🧑 " + (data.answer || ""));
       return;
     }
+
+    if (data.type === "end_summary") {
+      addMessage(
+        "orlem",
+        "✅ Reunião encerrada.\n\n📄 RESUMO FINAL:\n" + (data.answer || "")
+      );
+      return;
+    }
+
+    // fallback
+    addMessage("system", JSON.stringify(data));
   };
 
   socket.onclose = () => {
-    setWsConnected(false);
+    console.log("WS fechado, tentando reconectar em 2s…");
+    setWsStatus(false);
     setTimeout(connectWS, 2000);
+  };
+
+  socket.onerror = (err) => {
+    console.error("Erro no WebSocket:", err);
   };
 }
 
 // ===============================
 // ENVIO
 // ===============================
-function sendCurrentText() {
-  const text = utterance.value.trim();
-  if (!text || !socket || socket.readyState !== WebSocket.OPEN) return;
+if (sendBtn && utterance) {
+  sendBtn.onclick = () => {
+    const text = utterance.value.trim();
+    if (!text || !socket || socket.readyState !== WebSocket.OPEN) return;
+    addMessage("user", text);
+    socket.send(JSON.stringify({ text, session_id: currentSessionId }));
+    utterance.value = "";
+  };
 
-  addMessage("user", text);
-
-  socket.send(
-    JSON.stringify({
-      text,
-      session_id: currentSessionId,
-    })
-  );
-
-  utterance.value = "";
-}
-
-if (sendBtn) {
-  sendBtn.onclick = sendCurrentText;
-}
-
-if (utterance) {
   utterance.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendCurrentText();
+      sendBtn.onclick();
     }
   });
 }
 
 // ===============================
-// TOPO (resumir / salvar / etc.)
+// AÇÕES DE TOPO
 // ===============================
 if (summarizeBtn) {
   summarizeBtn.onclick = () => {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
-
-    // se tiver log aberto, manda esse
-    if (currentOpenedLog) {
-      socket.send(
-        JSON.stringify({
-          action: "summarize",
-          session_id: currentSessionId,
-          target_log: currentOpenedLog,
-        })
-      );
-    } else {
-      socket.send(
-        JSON.stringify({
-          action: "summarize",
-          session_id: currentSessionId,
-        })
-      );
-    }
+    socket.send(
+      JSON.stringify({
+        action: "summarize",
+        session_id: currentSessionId,
+      })
+    );
   };
 }
 
@@ -198,17 +199,14 @@ if (saveBtn) {
   saveBtn.onclick = () => {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     socket.send(
-      JSON.stringify({
-        action: "save",
-        session_id: currentSessionId,
-      })
+      JSON.stringify({ action: "save", session_id: currentSessionId })
     );
   };
 }
 
 if (renameBtn) {
   renameBtn.onclick = async () => {
-    const current = currentOpenedLog || currentSessionId;
+    let current = currentOpenedLog || currentSessionId;
     if (!current) {
       alert("Nenhuma sessão para renomear.");
       return;
@@ -223,26 +221,27 @@ if (renameBtn) {
       new_name: newName,
     };
 
-    const res = await fetch("/logs/rename", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    try {
+      const res = await fetch("/logs/rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-    if (!res.ok) {
-      let msg = "Erro ao renomear.";
-      try {
-        const data = await res.json();
-        msg = data.detail || msg;
-      } catch {}
-      alert(msg);
-      return;
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert("Erro ao renomear: " + (data.detail || res.status));
+        return;
+      }
+
+      const data = await res.json();
+      currentOpenedLog = data.new_name;
+      setSessionLabel("log: " + data.new_name);
+      loadLogs();
+    } catch (e) {
+      console.error(e);
+      alert("Erro de rede ao renomear log.");
     }
-
-    const data = await res.json();
-    currentOpenedLog = data.new_name;
-    setSessionLabel("log: " + data.new_name);
-    loadLogs();
   };
 }
 
@@ -250,10 +249,7 @@ if (diarizeBtn) {
   diarizeBtn.onclick = () => {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     socket.send(
-      JSON.stringify({
-        action: "diarize",
-        session_id: currentSessionId,
-      })
+      JSON.stringify({ action: "diarize", session_id: currentSessionId })
     );
   };
 }
@@ -261,51 +257,46 @@ if (diarizeBtn) {
 if (exportBtn) {
   exportBtn.onclick = async () => {
     const filename =
-      currentOpenedLog ||
-      (currentSessionId ? currentSessionId + ".jsonl" : null);
+      currentOpenedLog || (currentSessionId ? currentSessionId + ".jsonl" : null);
     if (!filename) {
       alert("Nenhum log selecionado pra exportar.");
       return;
     }
-    const res = await fetch("/logs/" + filename);
-    if (!res.ok) {
-      alert("Não consegui baixar o log.");
-      return;
+    try {
+      const res = await fetch("/logs/" + filename);
+      if (!res.ok) {
+        alert("Não consegui baixar o log.");
+        return;
+      }
+      const text = await res.text();
+      const blob = new Blob([text], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao exportar log.");
     }
-    const text = await res.text();
-    const blob = new Blob([text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 }
 
-// botão ENCERRAR: faz um resumo final e registra no chat
 if (endMeetingBtn) {
   endMeetingBtn.onclick = () => {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    addMessage("system", "Encerrando reunião... gerando resumo.");
     socket.send(
       JSON.stringify({
-        action: "summarize",
+        action: "end_meeting",
         session_id: currentSessionId,
       })
     );
   };
 }
 
-// botão "Reuniões (DB)" -> recarrega lista
-if (loadMeetingsBtn) {
-  loadMeetingsBtn.onclick = () => {
-    loadMeetings();
-  };
-}
-
 // ===============================
-// LOGS (.jsonl) - LADO ESQUERDO
+// LOGS (arquivos .jsonl)
 // ===============================
 function loadLogs() {
   fetch("/logs")
@@ -328,7 +319,7 @@ function viewLog(logname, itemEl) {
   document
     .querySelectorAll(".log-item")
     .forEach((el) => el.classList.remove("active"));
-  if (itemEl) itemEl.classList.add("active");
+  itemEl.classList.add("active");
   currentOpenedLog = logname;
 
   fetch("/logs/" + logname)
@@ -356,79 +347,55 @@ if (refreshLogsBtn) {
 }
 
 // ===============================
-// MEETINGS DO DB
+// REUNIÕES (DB)
 // ===============================
-function renderMeetingsList(meetings) {
-  if (!meetingsList) return;
-  meetingsList.innerHTML = "";
-
-  (meetings || []).forEach((m) => {
-    const item = document.createElement("div");
-    item.className = "meeting-item";
-
-    const when = formatDateTimeLabel(m.created_at);
-    let title = m.title || "Reunião";
-    // deixar mais bonito: esconder "via WebSocket"
-    if (title.toLowerCase().includes("websocket")) {
-      title = "Reunião local";
-    }
-
-    item.innerHTML = `
-      <strong>${title}</strong>
-      <div class="meeting-meta">${when} — #${m.id}</div>
-    `;
-
-    item.onclick = () => {
-      document
-        .querySelectorAll(".meeting-item")
-        .forEach((el) => el.classList.remove("active"));
-      item.classList.add("active");
-      openMeetingFromDb(m.id, item);
-    };
-
-    meetingsList.appendChild(item);
-  });
-}
-
-function loadMeetings() {
+function loadMeetingsFromDB() {
   fetch("/api/meetings")
     .then((r) => r.json())
     .then((data) => {
-      renderMeetingsList(data.meetings || []);
+      if (!meetingsList) return;
+      meetingsList.innerHTML = "";
+      (data.meetings || []).forEach((m) => {
+        const item = document.createElement("div");
+        item.className = "meeting-item";
+        const title = m.title || `Reunião #${m.id}`;
+        item.innerHTML = `
+          <div>${title}</div>
+          <span class="meta">id ${m.id}</span>
+        `;
+        item.onclick = () => viewMeeting(m.id, item);
+        meetingsList.appendChild(item);
+      });
     })
     .catch((err) => console.error(err));
 }
 
-function openMeetingFromDb(meetingId) {
-  currentMeetingId = meetingId;
+function viewMeeting(meetingId, itemEl) {
+  document
+    .querySelectorAll(".meeting-item")
+    .forEach((el) => el.classList.remove("active"));
+  itemEl.classList.add("active");
 
   fetch(`/api/meetings/${meetingId}`)
     .then((r) => r.json())
     .then((data) => {
-      const msgs = data.messages || [];
       if (!timeline) return;
       timeline.innerHTML = "";
-
-      addMessage(
-        "system",
-        `Abrindo reunião do DB: #${meetingId} — Reunião registrada`
-      );
-
-      if (!msgs.length) {
-        addMessage("system", "Esta reunião não tem mensagens salvas.");
-      } else {
-        msgs.forEach((m) => {
-          addMessage(m.role === "user" ? "user" : "orlem", m.content);
-        });
-      }
-
-      setSessionLabel("reunião #" + meetingId);
+      const msgs = data.messages || [];
+      msgs.forEach((m) => {
+        addMessage(m.role === "user" ? "user" : "orlem", m.content || "");
+      });
+      setSessionLabel("reunião id: " + meetingId);
     })
     .catch((err) => console.error(err));
 }
 
+if (loadMeetingsBtn) {
+  loadMeetingsBtn.onclick = loadMeetingsFromDB;
+}
+
 // ===============================
-// MIC / STT
+// MIC (Web Speech API)
 // ===============================
 function initSTT() {
   const SpeechRecognition =
@@ -441,11 +408,12 @@ function initSTT() {
   rec.lang = "pt-BR";
   rec.continuous = false;
   rec.interimResults = false;
-
   rec.onresult = (e) => {
     const text = e.results[0][0].transcript;
-    utterance.value = text;
-    sendCurrentText();
+    if (utterance) {
+      utterance.value = text;
+      if (sendBtn) sendBtn.onclick();
+    }
   };
   rec.onerror = (e) => {
     console.warn("erro no mic", e);
@@ -461,19 +429,19 @@ function startRecording() {
   if (!recog) recog = initSTT();
   if (!recog) return;
   isRecording = true;
-  micBtn.classList.add("recording");
-  micDot.classList.add("on");
+  if (micBtn) micBtn.classList.add("recording");
+  if (micDot) micDot.classList.add("on");
   try {
     recog.start();
   } catch (e) {
-    console.warn(e);
+    console.warn("erro ao iniciar STT", e);
   }
 }
 
 function stopRecording() {
   isRecording = false;
-  micBtn.classList.remove("recording");
-  micDot.classList.remove("on");
+  if (micBtn) micBtn.classList.remove("recording");
+  if (micDot) micDot.classList.remove("on");
   if (recog) {
     try {
       recog.stop();
@@ -491,6 +459,8 @@ if (micBtn) {
 // ===============================
 // BOOT
 // ===============================
-connectWS();
-loadLogs();
-loadMeetings();
+window.addEventListener("load", () => {
+  connectWS();
+  loadLogs();
+  loadMeetingsFromDB();
+});

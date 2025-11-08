@@ -1,111 +1,190 @@
 # db.py
-from __future__ import annotations
-import json
-from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 
-from sqlalchemy import create_engine, select, func
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker, Session
 
-from models import Base, User, Workspace, Member, Meeting, Message
+from models import Base, User, Meeting, Message
 
-DB_URL = "sqlite:///orlem.db"
+# ================================
+# CONFIGURAÇÃO DO BANCO
+# ================================
+DATABASE_URL = "sqlite:///orlem.db"
 
-engine = create_engine(DB_URL, echo=False, future=True)
-SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False},  # necessário pro SQLite + threads
+)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
+def get_db() -> Session:
+    """Abre uma sessão de banco e garante fechamento depois."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# ================================
+# INICIALIZAÇÃO
+# ================================
 def init_db() -> None:
-    Base.metadata.create_all(engine)
+    """Cria as tabelas se ainda não existirem."""
+    Base.metadata.create_all(bind=engine)
 
 
-def _get_or_create_default_workspace(session, user_id: int) -> Workspace:
-    ws = session.execute(
-        select(Workspace).join(Member, Member.workspace_id == Workspace.id).where(Member.user_id == user_id)
-    ).scalar_one_or_none()
-    if ws:
-        return ws
-    # cria workspace + membership
-    ws = Workspace(name="Default Workspace")
-    session.add(ws)
-    session.flush()
-    m = Member(user_id=user_id, workspace_id=ws.id, role="owner")
-    session.add(m)
-    return ws
-
-
+# ================================
+# USUÁRIO PADRÃO
+# ================================
 def get_or_create_default_user() -> int:
-    with SessionLocal() as session:
-        user = session.execute(select(User).order_by(User.id)).scalar_one_or_none()
-        if not user:
-            user = User(name="Default User", email=None)
-            session.add(user)
-            session.flush()
-        _get_or_create_default_workspace(session, user.id)
-        session.commit()
+    """
+    Retorna o id de um usuário 'padrão'.
+    Se não existir ainda, cria um.
+    """
+    db = SessionLocal()
+    try:
+        # pega o primeiro usuário que existir
+        user = db.execute(select(User).order_by(User.id.asc())).scalars().first()
+        if user:
+            return user.id
+
+        # se não tiver ninguém, cria um usuário default
+        user = User(
+            name="Usuário Orlem",
+            email="orlem@local",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
         return user.id
+    finally:
+        db.close()
 
 
-def create_meeting(user_id: int, title: str, source: str = "local") -> int:
-    with SessionLocal() as session:
-        ws = _get_or_create_default_workspace(session, user_id)
-        meeting = Meeting(workspace_id=ws.id, title=title, source=source, status="open")
-        session.add(meeting)
-        session.flush()
-        session.commit()
+# ================================
+# REUNIÕES
+# ================================
+def create_meeting(
+    user_id: int,
+    title: str = "Reunião local",
+    source: str = "local",
+) -> int:
+    """Cria uma reunião e retorna o id."""
+    db = SessionLocal()
+    try:
+        meeting = Meeting(
+            user_id=user_id,
+            title=title,
+            source=source,
+        )
+        db.add(meeting)
+        db.commit()
+        db.refresh(meeting)
         return meeting.id
+    finally:
+        db.close()
 
 
-def list_meetings(user_id: int, limit: int = 30) -> List[Dict[str, Any]]:
-    with SessionLocal() as session:
-        ws = _get_or_create_default_workspace(session, user_id)
-        rows = (
-            session.execute(
+def list_meetings(user_id: int) -> List[Dict]:
+    """Lista reuniões de um usuário em ordem decrescente de criação."""
+    db = SessionLocal()
+    try:
+        meetings = (
+            db.execute(
                 select(Meeting)
-                .where(Meeting.workspace_id == ws.id)
+                .where(Meeting.user_id == user_id)
                 .order_by(Meeting.created_at.desc())
-                .limit(limit)
             )
             .scalars()
             .all()
         )
-        return [
-            {
-                "id": r.id,
-                "title": r.title,
-                "status": r.status,
-                "source": r.source,
-                "created_at": r.created_at.isoformat(),
-                "updated_at": r.updated_at.isoformat(),
-            }
-            for r in rows
-        ]
+
+        out = []
+        for m in meetings:
+            out.append(
+                {
+                    "id": m.id,
+                    "title": m.title,
+                    "source": m.source,
+                    "status": m.status,
+                    "created_at": m.created_at.isoformat() if m.created_at else None,
+                }
+            )
+        return out
+    finally:
+        db.close()
 
 
-def add_message(meeting_id: int, role: str, content: str, meta: Optional[Dict[str, Any]] = None) -> int:
-    with SessionLocal() as session:
+def get_last_meeting(user_id: int) -> Optional[Dict]:
+    """Última reunião de um usuário (se existir)."""
+    db = SessionLocal()
+    try:
+        m = (
+            db.execute(
+                select(Meeting)
+                .where(Meeting.user_id == user_id)
+                .order_by(Meeting.created_at.desc())
+            )
+            .scalars()
+            .first()
+        )
+        if not m:
+            return None
+
+        return {
+            "id": m.id,
+            "title": m.title,
+            "source": m.source,
+            "status": m.status,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+        }
+    finally:
+        db.close()
+
+
+# ================================
+# MENSAGENS
+# ================================
+def add_message(
+    meeting_id: int,
+    role: str,
+    content: str,
+    meta_json: Optional[str] = None,
+) -> int:
+    """Adiciona mensagem a uma reunião."""
+    db = SessionLocal()
+    try:
         msg = Message(
             meeting_id=meeting_id,
             role=role,
             content=content,
-            meta_json=(json.dumps(meta, ensure_ascii=False) if meta else None),
+            meta_json=meta_json,
         )
-        session.add(msg)
-        session.flush()
-        session.commit()
+        db.add(msg)
+        db.commit()
+        db.refresh(msg)
         return msg.id
+    finally:
+        db.close()
 
 
-def get_meeting_messages(meeting_id: int) -> List[Dict[str, Any]]:
-    with SessionLocal() as session:
+def get_meeting_messages(meeting_id: int) -> List[Dict]:
+    """Retorna todas as mensagens de uma reunião em ordem cronológica."""
+    db = SessionLocal()
+    try:
         msgs = (
-            session.execute(
-                select(Message).where(Message.meeting_id == meeting_id).order_by(Message.created_at.asc())
+            db.execute(
+                select(Message)
+                .where(Message.meeting_id == meeting_id)
+                .order_by(Message.created_at.asc())
             )
             .scalars()
             .all()
         )
-        out: List[Dict[str, Any]] = []
+
+        out = []
         for m in msgs:
             out.append(
                 {
@@ -113,7 +192,9 @@ def get_meeting_messages(meeting_id: int) -> List[Dict[str, Any]]:
                     "role": m.role,
                     "content": m.content,
                     "meta_json": m.meta_json,
-                    "created_at": m.created_at.isoformat(),
+                    "created_at": m.created_at.isoformat() if m.created_at else None,
                 }
             )
         return out
+    finally:
+        db.close()
