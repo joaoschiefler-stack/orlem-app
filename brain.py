@@ -1,13 +1,22 @@
 # brain.py
 """
-ORLEM — cérebro completo (fase 1)
+ORLEM — cérebro completo (fase 1.5 turbinada)
 
-- responde como sócio na call
-- cobre: cliente, atraso, resumo, decisões, próximos passos, conflito, vendas, suporte,
+- Responde como sócio na call
+- Cobre: cliente, atraso, resumo, decisões, próximos passos, conflito, vendas, suporte,
   segurança/LGPD, contratação, retro, mudança de escopo, orçamento, e-mail, whatsapp,
   brainstorming, OKR, treinamento
-- responde curto (3-5 frases)
-- expõe client_status_message(...) pra compat com app.py
+- Responde curto (3-5 frases) por padrão
+- Só responde na call quando for:
+    - chamado pelo nome ("orlem") OU
+    - um comando explícito (resumo, próximos passos, mensagem pro cliente, etc.)
+- Expõe:
+    - ask_orlem(...)
+    - summarize_transcript(...)
+    - extract_decisions(...)
+    - extract_actions(...)
+    - client_status_message(...)
+    - diarize_transcript(...)
 """
 
 import os
@@ -25,15 +34,21 @@ MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
+
 # ---------------------------------------------------------
 # 1. Prompts base
 # ---------------------------------------------------------
 BASE_SYSTEM = (
     "Você é o ORLEM, um assistente de reuniões que age como um sócio humano, experiente, "
     "que está dentro da call. Responda em português do Brasil. "
-    "Regra padrão: responda em 3 a 5 frases. "
+    "Regra padrão: responda em 3 a 5 frases, em tom natural de fala. "
     "Não diga que é IA. Não diga 'como modelo de linguagem'. "
-    "Se o usuário falar de cliente, seja profissional. Se for interno, seja direto."
+    "Se o usuário falar de cliente, seja profissional. Se for interno, seja direto. "
+    "Quando o pedido for muito aberto (por exemplo: 'vamos planejar um post', 'me dá ideias', "
+    "'vamos montar uma campanha', 'me ajuda com a estratégia'), NÃO saia respondendo com um texto gigante. "
+    "Primeiro faça 2 a 4 perguntas rápidas para coletar contexto (por exemplo: produto/serviço, público-alvo, "
+    "objetivo principal, canal onde será usado, prazo). Depois que o usuário responder, aí sim traga sugestões "
+    "mais completas, ainda em 3 a 5 frases, ou em bullets curtos se fizer sentido."
 )
 
 SUMMARIZER_SYSTEM = (
@@ -58,7 +73,6 @@ ACTIONS_SYSTEM = (
     "Se não souber o responsável, use 'Time'."
 )
 
-# 🔥 aqui eu já tirei o [Nome do Cliente] e deixei pronto pra mandar
 CLIENT_MSG_SYSTEM = (
     "Você vai escrever uma mensagem curta e educada para CLIENTE, explicando status. "
     "Comece com: 'Olá, tudo bem?' ou 'Olá, bom dia!' (sem nome). "
@@ -144,6 +158,7 @@ TRAINING_SYSTEM = (
     "Monte um mini roteiro de treinamento / onboarding em tópicos, para apresentar na reunião."
 )
 
+
 # ---------------------------------------------------------
 # 2. Helpers
 # ---------------------------------------------------------
@@ -152,19 +167,23 @@ def _chat(messages: List[Dict[str, Any]], model: Optional[str] = None) -> str:
         model=model or MODEL_NAME,
         messages=messages,
     )
-    return resp.choices[0].message.content
+    return resp.choices[0].message.content or ""
+
 
 def _keep(text: str, max_len: int = 1100) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 3] + "..."
 
+
 def _norm(s: str) -> str:
     return (s or "").lower().strip()
+
 
 def _has(s: str, kws: List[str]) -> bool:
     s = _norm(s)
     return any(kw in s for kw in kws)
+
 
 # ---------------------------------------------------------
 # 3. Detectores de intenção
@@ -176,6 +195,7 @@ def is_client_message(s: str) -> bool:
         "manda pro cliente", "responde o cliente"
     ])
 
+
 def is_delay(s: str) -> bool:
     return _has(s, [
         "explica o atraso", "explicar o atraso",
@@ -183,62 +203,88 @@ def is_delay(s: str) -> bool:
         "justifica a demora", "atrasou", "demorou"
     ])
 
+
 def is_summary(s: str) -> bool:
     return _has(s, ["resumo", "resuma", "resumir a reunião", "ata"])
+
 
 def is_decisions(s: str) -> bool:
     return _has(s, ["decisões", "decisoes", "o que foi decidido"])
 
+
 def is_actions(s: str) -> bool:
     return _has(s, ["próximos passos", "proximos passos", "o que falta", "ações", "acoes"])
+
 
 def is_conflict(s: str) -> bool:
     return _has(s, ["conflito", "discordou", "discordaram", "não concordou", "nao concordou"])
 
+
 def is_standup(s: str) -> bool:
     return _has(s, ["standup", "daily", "atualização rápida", "atualizacao rapida"])
+
 
 def is_taskify(s: str) -> bool:
     return _has(s, ["transforma em tarefa", "gera tasks", "to do list", "lista de tarefas"])
 
+
 def is_sales(s: str) -> bool:
     return _has(s, ["proposta", "orçamento pro cliente", "demo", "apresentação", "venda"])
+
 
 def is_support(s: str) -> bool:
     return _has(s, ["cliente reclamou", "cliente bravo", "ticket", "suporte", "erro no cliente"])
 
+
 def is_security(s: str) -> bool:
     return _has(s, ["lgpd", "segurança", "privacidade", "dados sensíveis", "pode gravar"])
+
 
 def is_hiring(s: str) -> bool:
     return _has(s, ["vaga", "entrevista", "candidato", "contratar", "recrutamento"])
 
+
 def is_retro(s: str) -> bool:
     return _has(s, ["retro", "retrospectiva", "post-mortem", "post mortem", "lições aprendidas"])
+
 
 def is_scope_change(s: str) -> bool:
     return _has(s, ["mudança de escopo", "escopo mudou", "não estava no escopo", "nao estava no escopo"])
 
+
 def is_budget(s: str) -> bool:
     return _has(s, ["orçamento", "desconto", "valor do projeto", "pricing"])
+
 
 def is_email(s: str) -> bool:
     return _has(s, ["transforma em email", "transformar em email", "vira email"])
 
+
 def is_whatsapp(s: str) -> bool:
     return _has(s, ["mensagem de whatsapp", "whatsapp", "manda no zap"])
 
+
 def is_brainstorm(s: str) -> bool:
-    return _has(s, ["ideias", "me dá ideias", "brainstorm", "opções", "alternativas"])
+    return _has(s, ["ideias", "me dá ideias", "me da ideias", "brainstorm", "opções", "opcoes", "alternativas"])
+
 
 def is_okr(s: str) -> bool:
     return _has(s, ["okr", "metas do trimestre", "objetivos e resultados", "planejamento do time"])
 
+
 def is_training(s: str) -> bool:
     return _has(s, ["treinamento", "onboard", "onboarding", "apresentar pro time"])
 
+
+def is_greeting(s: str) -> bool:
+    return _has(s, [
+        "bom dia", "boa tarde", "boa noite",
+        "olá", "ola", "oi", "e aí", "e ai", "fala orlem"
+    ])
+
+
 # ---------------------------------------------------------
-# 3.1 Detector de pedido vago (ADIÇÃO)
+# 3.1 Detector de pedido vago
 # ---------------------------------------------------------
 VAGUE_TRIGGERS = [
     "ideia", "ideias", "brainstorm", "como começar", "como podemos",
@@ -247,28 +293,31 @@ VAGUE_TRIGGERS = [
     "me ajuda", "planejar", "plano", "campanha", "conteúdo", "conteudo"
 ]
 
+
 def needs_clarification(s: str) -> bool:
     s = _norm(s)
     if len(s) < 12:  # muito curto
         return True
-    # se contém gatilhos vagos
     if any(k in s for k in VAGUE_TRIGGERS):
-        # se já trouxe contexto “rico”, não precisa (heurística simples)
-        rich_signals = ["objetivo", "público", "publico", "formato", "canal", "restrição", "restricoes",
-                        "prazo", "deadline", "kpi", "critério de sucesso", "criterio de sucesso"]
+        rich_signals = [
+            "objetivo", "público", "publico", "formato", "canal", "restrição", "restricoes",
+            "prazo", "deadline", "kpi", "critério de sucesso", "criterio de sucesso"
+        ]
         if not any(k in s for k in rich_signals):
             return True
     return False
 
+
 CLARIFY_MESSAGE = (
-    "Para eu acertar em cheio, rapidinho:\n"
+    "Pra eu acertar em cheio, rapidinho:\n"
     "1) Qual é o **objetivo** principal?\n"
     "2) Quem é o **público-alvo**?\n"
     "3) Qual **formato/canal** (ex.: reunião, e-mail, landing, Instagram…)?\n"
     "4) Alguma **restrição** (tom, tamanho, palavras proibidas, políticas)?\n"
     "5) **Prazo** e **critério de sucesso**?\n"
-    "Manda esses 5 pontos e eu devolvo algo cirúrgico. 😉"
+    "Manda esses pontos e eu devolvo algo bem cirúrgico."
 )
+
 
 # ---------------------------------------------------------
 # 4. Geradores especializados
@@ -280,12 +329,14 @@ async def gen_client_message(context: str) -> str:
     ]
     return _keep(_chat(msgs))
 
+
 async def gen_delay_message(context: str) -> str:
     msgs = [
         {"role": "system", "content": DELAY_SYSTEM},
         {"role": "user", "content": context},
     ]
     return _keep(_chat(msgs))
+
 
 async def gen_summary(context: str) -> str:
     msgs = [
@@ -294,12 +345,14 @@ async def gen_summary(context: str) -> str:
     ]
     return _keep(_chat(msgs), 1400)
 
+
 async def gen_decisions(context: str) -> str:
     msgs = [
         {"role": "system", "content": DECISIONS_SYSTEM},
         {"role": "user", "content": context},
     ]
     return _keep(_chat(msgs), 1000)
+
 
 async def gen_actions(context: str) -> str:
     msgs = [
@@ -308,12 +361,14 @@ async def gen_actions(context: str) -> str:
     ]
     return _keep(_chat(msgs), 1000)
 
+
 async def gen_conflict_solution(context: str) -> str:
     msgs = [
         {"role": "system", "content": CONFLICT_SYSTEM},
         {"role": "user", "content": context},
     ]
     return _keep(_chat(msgs))
+
 
 async def gen_standup(context: str) -> str:
     msgs = [
@@ -322,12 +377,14 @@ async def gen_standup(context: str) -> str:
     ]
     return _keep(_chat(msgs))
 
+
 async def gen_tasks(context: str) -> str:
     msgs = [
         {"role": "system", "content": TASKIFY_SYSTEM},
         {"role": "user", "content": context},
     ]
     return _keep(_chat(msgs), 1200)
+
 
 async def gen_sales(context: str) -> str:
     msgs = [
@@ -336,12 +393,14 @@ async def gen_sales(context: str) -> str:
     ]
     return _keep(_chat(msgs))
 
+
 async def gen_support(context: str) -> str:
     msgs = [
         {"role": "system", "content": SUPPORT_SYSTEM},
         {"role": "user", "content": context},
     ]
     return _keep(_chat(msgs))
+
 
 async def gen_security(context: str) -> str:
     msgs = [
@@ -350,12 +409,14 @@ async def gen_security(context: str) -> str:
     ]
     return _keep(_chat(msgs))
 
+
 async def gen_hiring(context: str) -> str:
     msgs = [
         {"role": "system", "content": HIRING_SYSTEM},
         {"role": "user", "content": context},
     ]
     return _keep(_chat(msgs))
+
 
 async def gen_retro(context: str) -> str:
     msgs = [
@@ -364,12 +425,14 @@ async def gen_retro(context: str) -> str:
     ]
     return _keep(_chat(msgs))
 
+
 async def gen_scope_change(context: str) -> str:
     msgs = [
         {"role": "system", "content": SCOPE_CHANGE_SYSTEM},
         {"role": "user", "content": context},
     ]
     return _keep(_chat(msgs))
+
 
 async def gen_budget(context: str) -> str:
     msgs = [
@@ -378,12 +441,14 @@ async def gen_budget(context: str) -> str:
     ]
     return _keep(_chat(msgs))
 
+
 async def gen_email(context: str) -> str:
     msgs = [
         {"role": "system", "content": EMAIL_SYSTEM},
         {"role": "user", "content": context},
     ]
     return _keep(_chat(msgs))
+
 
 async def gen_whatsapp(context: str) -> str:
     msgs = [
@@ -392,12 +457,14 @@ async def gen_whatsapp(context: str) -> str:
     ]
     return _keep(_chat(msgs))
 
+
 async def gen_brainstorm(context: str) -> str:
     msgs = [
         {"role": "system", "content": BRAINSTORM_SYSTEM},
         {"role": "user", "content": context},
     ]
     return _keep(_chat(msgs))
+
 
 async def gen_okr(context: str) -> str:
     msgs = [
@@ -406,12 +473,14 @@ async def gen_okr(context: str) -> str:
     ]
     return _keep(_chat(msgs))
 
+
 async def gen_training(context: str) -> str:
     msgs = [
         {"role": "system", "content": TRAINING_SYSTEM},
         {"role": "user", "content": context},
     ]
     return _keep(_chat(msgs))
+
 
 # ---------------------------------------------------------
 # 5. fallback: sócio na call
@@ -423,18 +492,54 @@ async def answer_like_partner(text: str) -> str:
     ]
     return _keep(_chat(msgs))
 
+
 # ---------------------------------------------------------
 # 6. Função principal usada pelo app.py
 # ---------------------------------------------------------
 async def ask_orlem(user_message: str) -> str:
+    """
+    Cérebro principal.
+    - O app.py pode chamar isso em TODA mensagem do usuário.
+    - Esta função decide se responde ou se fica em silêncio.
+    - Se quiser ficar em silêncio, retorna string vazia "".
+    """
     msg = user_message or ""
     low = _norm(msg)
 
-    # (ADIÇÃO) — Perguntas de clarificação primeiro para pedidos vagos
-    if needs_clarification(low):
+    # Foi chamado pelo nome em qualquer lugar?
+    is_called = "orlem" in low
+
+    # Detecta comandos diretos (resumo, mensagem pro cliente, etc.)
+    is_command = any([
+        is_client_message(low), is_delay(low), is_summary(low), is_decisions(low),
+        is_actions(low), is_conflict(low), is_standup(low), is_taskify(low),
+        is_sales(low), is_support(low), is_security(low), is_hiring(low),
+        is_retro(low), is_scope_change(low), is_budget(low),
+        is_email(low), is_whatsapp(low), is_brainstorm(low),
+        is_okr(low), is_training(low)
+    ])
+
+    # Se não foi chamado e não é comando, fica quieto (mas o app registra no log)
+    if not (is_called or is_command):
+        return ""
+
+    # Cumprimento simples -> resposta curta sem chamar modelo pesado
+    if is_called and is_greeting(low) and not is_command:
+        return "Fala, tudo certo? Tô acompanhando aqui, pode seguir que eu entro quando precisar."
+
+    # Se foi chamado e o pedido é muito vago (ideias, campanha, etc.), pede contexto
+    if is_called and not is_command and needs_clarification(msg):
         return CLARIFY_MESSAGE
 
-    # Rotas específicas (mantidas)
+    # Remove prefixo “orlem” do começo, se tiver, pra resposta ficar natural
+    if low.startswith("orlem"):
+        msg = msg.split(" ", 1)[1] if " " in msg else ""
+
+    # Se for brainstorm mas ainda estiver vago, pede contexto antes de sugerir
+    if is_brainstorm(low) and needs_clarification(msg):
+        return CLARIFY_MESSAGE
+
+    # Roteamento pros geradores especializados
     if is_client_message(low):
         return await gen_client_message(msg)
     if is_delay(low):
@@ -476,8 +581,9 @@ async def ask_orlem(user_message: str) -> str:
     if is_training(low):
         return await gen_training(msg)
 
-    # se não bateu em nada, responde como sócio
+    # Fallback: resposta como sócio na call
     return await answer_like_partner(msg)
+
 
 # ---------------------------------------------------------
 # 7. Funções auxiliares que o app.py chama direto
@@ -485,15 +591,19 @@ async def ask_orlem(user_message: str) -> str:
 async def summarize_transcript(transcript: str) -> str:
     return await gen_summary(transcript)
 
+
 async def extract_decisions(transcript: str) -> str:
     return await gen_decisions(transcript)
+
 
 async def extract_actions(transcript: str) -> str:
     return await gen_actions(transcript)
 
+
 # compat com app.py antigo
 async def client_status_message(contexto: str) -> str:
     return await gen_client_message(contexto)
+
 
 # ===============================
 # 8. Diarização (placeholder)

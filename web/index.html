@@ -1,330 +1,589 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-BR">
   <head>
-    <meta charset="utf-8" />
-    <title>Orlem — Assistente de Reuniões</title>
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta charset="UTF-8" />
+    <title>Orlem — Reunião ao vivo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
     <style>
       :root {
-        color-scheme: dark;
+        --bg-main: #020617;
+        --bg-elevated: #020718;
+        --bg-card: #020617;
+        --border-subtle: rgba(148, 163, 184, 0.4);
+        --border-strong: rgba(148, 163, 184, 0.7);
+        --text-main: #e2e8f0;
+        --text-soft: #9ca3af;
+        --accent: #22c55e;
+        --accent-soft: rgba(34, 197, 94, 0.15);
+        --danger: #f97316;
+        --radius-lg: 18px;
       }
+
       * {
         box-sizing: border-box;
       }
+
+      html,
       body {
         margin: 0;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-          Roboto, Arial, sans-serif;
-        background: radial-gradient(circle at top, #1f2937 0, #020617 55%);
-        color: #e5e7eb;
+        padding: 0;
+        height: 100%;
+        background: radial-gradient(120% 160% at 10% 0%, #0b1120, #020617);
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+          "Segoe UI", sans-serif;
+        color: var(--text-main);
       }
-      .app {
+
+      body {
         display: flex;
-        height: 100vh;
       }
-      .side {
-        width: 320px;
-        background: rgba(15, 23, 42, 0.98);
-        border-right: 1px solid rgba(51, 65, 85, 0.8);
-        padding: 14px;
-        overflow: auto;
-        backdrop-filter: blur(18px);
+
+      .app-shell {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr) 360px;
+        gap: 18px;
+        padding: 14px 18px 20px;
       }
-      .main {
+
+      /* ------- cards genéricos ------- */
+
+      .card {
+        background: radial-gradient(
+            circle at 0 0,
+            rgba(56, 189, 248, 0.08),
+            transparent 40%
+          ),
+          radial-gradient(
+            circle at 100% 100%,
+            rgba(129, 140, 248, 0.08),
+            transparent 45%
+          ),
+          rgba(15, 23, 42, 0.97);
+        border-radius: 22px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        box-shadow: 0 18px 60px rgba(15, 23, 42, 0.8);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .card-header {
+        padding: 14px 18px 6px;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        color: var(--text-soft);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .card-body {
+        padding: 10px 18px 16px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.45);
+        background: linear-gradient(
+          120deg,
+          rgba(15, 23, 42, 0.9),
+          rgba(15, 23, 42, 0.4)
+        );
+      }
+
+      .pill-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 12px rgba(34, 197, 94, 0.9);
+      }
+
+      /* ------- coluna da esquerda ------- */
+
+      .sidebar-col {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .sidebar-card {
+        padding-bottom: 10px;
+      }
+
+      .sidebar-title {
+        font-size: 13px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-soft);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .sidebar-btn {
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.45);
+        background: rgba(15, 23, 42, 0.7);
+        color: var(--text-soft);
+        cursor: pointer;
+      }
+
+      .sidebar-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      .sidebar-list {
+        margin-top: 10px;
+        max-height: 260px;
+        overflow-y: auto;
+        font-size: 12px;
+        padding-right: 6px;
+      }
+
+      .sidebar-item {
+        padding: 6px 8px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        color: var(--text-soft);
+      }
+
+      .sidebar-item:hover {
+        border-color: rgba(148, 163, 184, 0.5);
+        background: rgba(15, 23, 42, 0.9);
+        color: var(--text-main);
+      }
+
+      /* ------- coluna central ------- */
+
+      .center-col {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .top-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 7px 4px 4px;
+      }
+
+      .session-label {
+        font-size: 13px;
+        color: var(--text-soft);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      #session-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 12px rgba(34, 197, 94, 0.9);
+      }
+
+      #ws-status-text {
+        font-size: 12px;
+        color: var(--text-soft);
+      }
+
+      .top-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .chip-btn {
+        border-radius: 999px;
+        padding: 7px 13px;
+        font-size: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.5);
+        background: rgba(15, 23, 42, 0.9);
+        color: var(--text-soft);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .chip-btn.primary {
+        border-color: rgba(56, 189, 248, 0.8);
+        background: radial-gradient(
+          circle at 0 0,
+          rgba(56, 189, 248, 0.2),
+          rgba(15, 23, 42, 0.9)
+        );
+        color: #e0f2fe;
+      }
+
+      .chip-btn.danger {
+        border-color: rgba(248, 113, 113, 0.8);
+        color: #fecaca;
+      }
+
+      .chip-btn:hover {
+        transform: translateY(-0.5px);
+        box-shadow: 0 0 18px rgba(15, 23, 42, 0.9);
+      }
+
+      .chat-card {
         flex: 1;
         display: flex;
         flex-direction: column;
+        padding-top: 4px;
       }
-      header {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px 16px;
-        border-bottom: 1px solid rgba(51, 65, 85, 0.9);
-        background: linear-gradient(to right, #020617, #020617f0 35%, #020617 100%);
+
+      .chat-messages {
+        flex: 1;
+        padding: 10px 18px 14px;
+        overflow-y: auto;
       }
-      .brand {
-        font-weight: 700;
-        letter-spacing: 0.04em;
-        font-size: 14px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
+
+      .message {
+        margin-bottom: 10px;
+        max-width: 80%;
       }
-      .brand span {
-        font-size: 18px;
+
+      .message.system {
+        max-width: 100%;
       }
-      .pill {
-        padding: 4px 10px;
-        border-radius: 999px;
-        font-size: 11px;
-        background: rgba(15, 23, 42, 0.9);
-        border: 1px solid rgba(30, 64, 175, 0.5);
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .pill .dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #ef4444;
-      }
-      .pill.online .dot {
-        background: #22c55e;
-      }
-      .pill-label {
-        opacity: 0.85;
-      }
-      .toolbar {
-        display: flex;
-        gap: 6px;
+
+      .message.user {
         margin-left: auto;
-        flex-wrap: wrap;
-        justify-content: flex-end;
+        text-align: right;
       }
-      .btn {
-        background: rgba(15, 23, 42, 0.9);
-        border: 1px solid rgba(55, 65, 81, 0.9);
-        color: #e5e7eb;
-        padding: 6px 9px;
-        border-radius: 9px;
-        cursor: pointer;
-        font-size: 12px;
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        transition: background 0.12s ease, transform 0.08s ease,
-          border-color 0.12s ease;
+
+      .message.orlem .msg-label {
+        color: #a5b4fc;
       }
-      .btn span {
-        font-size: 14px;
+
+      .message.user .msg-label {
+        color: #fbbf24;
       }
-      .btn:hover {
-        background: rgba(30, 64, 175, 0.25);
-        border-color: rgba(129, 140, 248, 0.9);
-        transform: translateY(-0.5px);
+
+      .msg-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 2px;
+        color: var(--text-soft);
       }
-      .btn.primary {
-        background: linear-gradient(135deg, #4f46e5, #7c3aed);
-        border-color: transparent;
-      }
-      .btn.primary:hover {
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-      }
-      .timeline {
-        flex: 1;
-        padding: 16px;
-        overflow: auto;
-      }
-      .msg {
-        padding: 10px 12px;
-        border-radius: 12px;
-        margin-bottom: 8px;
-        max-width: 820px;
-        background: rgba(15, 23, 42, 0.9);
-        border: 1px solid rgba(55, 65, 81, 0.9);
+
+      .message > div:last-child {
+        border-radius: 14px;
+        padding: 8px 11px;
         font-size: 13px;
-        line-height: 1.4;
-        backdrop-filter: blur(10px);
+        line-height: 1.5;
+        background: rgba(15, 23, 42, 0.95);
+        border: 1px solid rgba(148, 163, 184, 0.35);
       }
-      .msg.user {
-        background: linear-gradient(
-          135deg,
-          rgba(37, 99, 235, 0.3),
-          rgba(15, 23, 42, 0.9)
-        );
-        border-color: rgba(59, 130, 246, 0.8);
-        margin-left: 40px;
-      }
-      .msg.bot {
-        background: linear-gradient(
-          135deg,
-          rgba(22, 163, 74, 0.3),
-          rgba(15, 23, 42, 0.9)
-        );
-        border-color: rgba(34, 197, 94, 0.8);
-        margin-right: 40px;
-      }
-      .msg.system {
-        opacity: 0.9;
-        font-style: italic;
-        border-style: dashed;
-      }
-      .composer {
-        display: flex;
-        gap: 8px;
-        padding: 10px 16px;
-        border-top: 1px solid rgba(30, 64, 175, 0.5);
+
+      .message.user > div:last-child {
         background: radial-gradient(
-          circle at top,
-          rgba(30, 64, 175, 0.2),
-          #020617
+          circle at 0 0,
+          rgba(56, 189, 248, 0.3),
+          rgba(15, 23, 42, 0.95)
         );
+        border-color: rgba(56, 189, 248, 0.7);
       }
-      textarea {
-        flex: 1;
-        resize: none;
+
+      .message.orlem > div:last-child {
+        background: radial-gradient(
+          circle at 100% 0,
+          rgba(129, 140, 248, 0.32),
+          rgba(15, 23, 42, 0.95)
+        );
+        border-color: rgba(129, 140, 248, 0.8);
+      }
+
+      .connection-status {
+        font-size: 11px;
+        color: var(--text-soft);
+        opacity: 0.9;
+        padding: 0 18px 6px;
+      }
+
+      .input-row {
+        margin-top: 6px;
+        padding: 0 18px 14px;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .mic-btn {
+        width: 42px;
+        height: 42px;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.4);
         background: rgba(15, 23, 42, 0.95);
-        color: #e5e7eb;
-        border: 1px solid rgba(55, 65, 81, 0.9);
-        border-radius: 10px;
-        padding: 10px 12px;
-        height: 52px;
-        font-size: 13px;
-        outline: none;
-      }
-      textarea::placeholder {
-        color: #64748b;
-      }
-      .mic {
-        width: 44px;
-        height: 44px;
-        border-radius: 12px;
-        background: rgba(15, 23, 42, 0.95);
-        border: 1px solid rgba(55, 65, 81, 0.9);
+        color: var(--text-soft);
+        cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
-        cursor: pointer;
-        position: relative;
         font-size: 18px;
       }
-      .mic.recording {
-        outline: 2px solid #ef4444;
-        outline-offset: 1px;
-        border-color: rgba(248, 113, 113, 0.9);
-        background: radial-gradient(circle at center, #991b1b, #020617);
+
+      .mic-btn.recording {
+        border-color: #f97316;
+        background: rgba(127, 29, 29, 0.96);
+        color: #fee2e2;
+        box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.7);
       }
-      #mic-dot {
-        position: absolute;
-        top: 6px;
-        right: 6px;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #374151;
+
+      #user-input {
+        width: 100%;
+        min-height: 42px;
+        max-height: 90px;
+        resize: vertical;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.55);
+        background: rgba(15, 23, 42, 0.96);
+        padding: 9px 14px;
+        font-size: 13px;
+        color: var(--text-main);
+        outline: none;
       }
-      #mic-dot.on {
-        background: #ef4444;
-        box-shadow: 0 0 8px rgba(248, 113, 113, 0.9);
+
+      #user-input::placeholder {
+        color: rgba(148, 163, 184, 0.9);
       }
-      .side-title {
+
+      #send-btn {
+        height: 42px;
+        padding: 0 16px;
+        border-radius: 999px;
+        border: none;
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        color: #022c22;
+        font-weight: 600;
+        font-size: 13px;
+        cursor: pointer;
+        box-shadow: 0 14px 40px rgba(21, 128, 61, 0.5);
+      }
+
+      #send-btn:hover {
+        filter: brightness(1.03);
+      }
+
+      .input-meta {
+        padding: 0 18px 12px;
         font-size: 11px;
-        color: #9ca3af;
-        margin: 10px 0 6px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
+        color: var(--text-soft);
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
       }
-      .list {
+
+      .pill-small {
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        padding: 3px 8px;
+      }
+
+      /* ------- coluna direita (painel) ------- */
+
+      .panel-col {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .panel-section {
+        padding-bottom: 12px;
+      }
+
+      .panel-header {
+        font-size: 13px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-bottom: 4px;
+      }
+
+      .panel-header span.count {
+        font-size: 11px;
+        color: var(--text-soft);
+      }
+
+      .panel-empty {
+        font-size: 12px;
+        color: var(--text-soft);
+        padding: 6px 0 8px;
+      }
+
+      .panel-items {
+        font-size: 12px;
         display: flex;
         flex-direction: column;
         gap: 6px;
       }
-      .log-item,
-      .meeting-item {
-        padding: 8px 10px;
-        border-radius: 8px;
+
+      .panel-item {
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.5);
+        padding: 6px 9px;
         background: rgba(15, 23, 42, 0.95);
-        border: 1px solid rgba(31, 41, 55, 0.9);
-        cursor: pointer;
-        font-size: 12px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .log-item.active,
-      .meeting-item.active {
-        border-color: #6366f1;
-        background: linear-gradient(
-          135deg,
-          rgba(79, 70, 229, 0.4),
-          rgba(15, 23, 42, 0.98)
-        );
-      }
-      .meeting-item span.meta {
-        font-size: 11px;
-        color: #9ca3af;
-      }
-      .side-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 8px;
-      }
-      .side-top .env {
-        font-size: 11px;
-        color: #9ca3af;
       }
     </style>
   </head>
   <body>
-    <div class="app">
-      <aside class="side">
-        <div class="side-top">
-          <div class="brand">
-            <span>🟣</span> ORLEM
+    <div class="app-shell">
+      <!-- COLUNA ESQUERDA — logs / reuniões -->
+      <div class="sidebar-col">
+        <div class="card sidebar-card">
+          <div class="card-body">
+            <div class="sidebar-title">
+              <span>Reuniões salvas (JSONL)</span>
+              <button id="btn-reload-logs" class="sidebar-btn">
+                Recarregar logs
+              </button>
+            </div>
+            <div id="logs-list" class="sidebar-list"></div>
           </div>
-          <div class="env">local dev</div>
         </div>
 
-        <div class="side-title">Reuniões salvas (.jsonl)</div>
-        <div id="logs-list" class="list"></div>
-        <button id="refresh-logs" class="btn" style="margin-top:6px;">
-          🔄 Recarregar logs
-        </button>
-
-        <div class="side-title" style="margin-top:14px;">Reuniões (banco)</div>
-        <button id="loadMeetings" class="btn" style="margin-bottom:6px;">
-          🗂️ Carregar reuniões
-        </button>
-        <div id="meetings-list" class="list"></div>
-      </aside>
-
-      <section class="main">
-        <header>
-          <div id="ws-status" class="pill">
-            <span class="dot"></span>
-            <span class="pill-label">desconectado</span>
+        <div class="card sidebar-card">
+          <div class="card-body">
+            <div class="sidebar-title">
+              <span>Reuniões (Banco)</span>
+              <button id="btn-load-meetings" class="sidebar-btn">
+                Carregar reuniões
+              </button>
+            </div>
+            <div id="meetings-list" class="sidebar-list"></div>
           </div>
-          <div class="pill" id="current-session">sessão: —</div>
-          <div class="toolbar">
-            <button id="summarize" class="btn">
-              <span>📄</span> Resumo
-            </button>
-            <button id="save" class="btn">
-              <span>💾</span> Salvar
-            </button>
-            <button id="rename" class="btn">
-              <span>✏️</span> Renomear log
-            </button>
-            <button id="diarize" class="btn">
-              <span>🧑‍🤝‍🧑</span> Diarizar
-            </button>
-            <button id="export" class="btn">
-              <span>⬇️</span> Exportar
-            </button>
-            <button id="endMeeting" class="btn primary">
-              <span>🛑</span> Encerrar
-            </button>
-          </div>
-        </header>
-
-        <div id="timeline" class="timeline"></div>
-
-        <div class="composer">
-          <button id="micBtn" class="mic" title="Falar com o Orlem">
-            <span id="mic-dot"></span>🎙️
-          </button>
-          <textarea
-            id="utterance"
-            placeholder="Digite ou fale com o Orlem como se ele fosse um sócio na call…"
-          ></textarea>
-          <button id="sendBtn" class="btn primary">
-            Enviar
-          </button>
         </div>
-      </section>
+      </div>
+
+      <!-- COLUNA CENTRAL — reunião ao vivo -->
+      <div class="center-col">
+        <div class="card chat-card">
+          <div class="top-bar">
+            <div>
+              <div class="session-label">
+                <span id="session-dot"></span>
+                <span id="ws-status-text">Conectando…</span>
+              </div>
+              <div id="session-label" class="session-label" style="margin-top:4px;">
+                sessão — ...
+              </div>
+            </div>
+
+            <div class="top-actions">
+              <button id="btn-summarize" class="chip-btn">
+                ↺ Resumo
+              </button>
+              <button id="btn-diarize" class="chip-btn">
+                👥 Diarizar
+              </button>
+              <button id="btn-end" class="chip-btn danger">
+                ⏹ Encerrar
+              </button>
+            </div>
+          </div>
+
+          <div id="chat-messages" class="chat-messages"></div>
+
+          <div id="connection-status" class="connection-status"></div>
+
+          <div class="input-row">
+            <button
+              id="btn-mic"
+              class="mic-btn"
+              title="Clique para gravar/pausar áudio para o Orlem"
+            >
+              🎙
+            </button>
+
+            <textarea
+              id="user-input"
+              placeholder="Digite ou fale com o Orlem como se ele fosse um sócio na call…"
+            ></textarea>
+
+            <button id="send-btn">Enviar</button>
+          </div>
+
+          <div class="input-meta">
+            <span class="pill-small">
+              Dica: chame pelo nome — “Orlem, o que você acha disso?”
+            </span>
+            <span>Enter para enviar</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- COLUNA DIREITA — painel da reunião -->
+      <div class="panel-col">
+        <div class="card">
+          <div class="card-body">
+            <div class="panel-section">
+              <div class="panel-header">
+                <span>Resumo parcial</span>
+                <span id="panel-summary-count" class="count">0 blocos</span>
+              </div>
+              <div id="panel-summary-empty" class="panel-empty">
+                Ainda não há resumo. Peça:
+                <em>“Orlem, faz um resumo rápido até agora.”</em>
+              </div>
+              <div id="panel-summary-items" class="panel-items"></div>
+            </div>
+
+            <div class="panel-section">
+              <div class="panel-header">
+                <span>Decisões</span>
+                <span id="panel-decisions-count" class="count">0 itens</span>
+              </div>
+              <div id="panel-decisions-empty" class="panel-empty">
+                Nenhuma decisão registrada ainda.
+              </div>
+              <div id="panel-decisions-items" class="panel-items"></div>
+            </div>
+
+            <div class="panel-section">
+              <div class="panel-header">
+                <span>Próximos passos</span>
+                <span id="panel-actions-count" class="count">0 tarefas</span>
+              </div>
+              <div id="panel-actions-empty" class="panel-empty">
+                Sem próximos passos ainda. Você pode pedir:
+                <em>“Orlem, transforma isso em tarefas.”</em>
+              </div>
+              <div id="panel-actions-items" class="panel-items"></div>
+            </div>
+
+            <div class="panel-section">
+              <div class="panel-header">
+                <span>Diarização</span>
+                <span id="panel-diarize-count" class="count">0 blocos</span>
+              </div>
+              <div id="panel-diarize-empty" class="panel-empty">
+                Quando quiser ver por falante, clique em “Diarizar”.
+              </div>
+              <div id="panel-diarize-items" class="panel-items"></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script src="/web/client.js"></script>

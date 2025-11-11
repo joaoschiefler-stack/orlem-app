@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Orlem — Assistente de Reuniões</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    :root {
+      --bg-main: #050816;
+      --bg-elevated: #0b1020;
+      --bg-card: #111827;
+      --accent: #6366f1;
+      --accent-soft: rgba(99, 102, 241, 0.12);
+      --border-soft: #1f2937;
+      --text-main: #e5e7eb;
+      --text-soft: #9ca3af;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --radius-lg: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: radial-gradient(circle at top left, #111827, #020617 40%, #000 80%);
+      color: var(--text-main);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      height: 100vh;
+      display: flex;
+    }
+
+    /* LAYOUT PRINCIPAL */
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      width: 100%;
+      height: 100%;
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--border-soft);
+      background: linear-gradient(to bottom, #020617ee, #020617);
+      padding: 16px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 8px;
+    }
+
+    .logo-badge {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 0, #a855f7, #6366f1 40%, #22c55e 90%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 18px;
+      color: #f9fafb;
+      box-shadow: 0 0 18px rgba(99, 102, 241, 0.8);
+    }
+
+    .app-title {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .app-title-main {
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    .app-title-sub {
+      font-size: 11px;
+      color: var(--text-soft);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+
+    .sidebar-section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-soft);
+      margin-bottom: 4px;
+      padding: 0 4px;
+    }
+
+    .sidebar-actions {
+      display: flex;
+      gap: 8px;
+      padding: 4px;
+    }
+
+    .btn {
+      border-radius: 999px;
+      border: 1px solid transparent;
+      background: #111827;
+      color: var(--text-main);
+      font-size: 12px;
+      padding: 6px 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: linear-gradient(to right, #6366f1, #8b5cf6);
+      border-color: #6366f1;
+      color: #f9fafb;
+      box-shadow: 0 8px 20px rgba(79, 70, 229, 0.35);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      border-color: var(--border-soft);
+      color: var(--text-soft);
+    }
+
+    .btn-sm {
+      font-size: 11px;
+      padding: 4px 9px;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      background-color: #111827;
+      border-color: #4b5563;
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(to right, #4f46e5, #7c3aed);
+    }
+
+    .sidebar-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+      margin-right: -6px;
+      padding-right: 6px;
+    }
+
+    .meeting-group {
+      margin-bottom: 16px;
+    }
+
+    .meeting-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .meeting-item {
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-soft);
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+    }
+
+    .meeting-item:hover {
+      background: rgba(15, 23, 42, 0.9);
+      border-color: var(--border-soft);
+      color: var(--text-main);
+    }
+
+    .meeting-item.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: #e5e7eb;
+    }
+
+    .meeting-item span {
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .meeting-badge {
+      font-size: 10px;
+      opacity: 0.7;
+    }
+
+    .sidebar-footer {
+      padding-top: 8px;
+      border-top: 1px solid var(--border-soft);
+      font-size: 11px;
+      color: var(--text-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--success);
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.9);
+      margin-right: 6px;
+    }
+
+    .status-text {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    /* MAIN AREA */
+
+    .main {
+      display: flex;
+      flex-direction: column;
+      padding: 14px 18px;
+      gap: 10px;
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-radius: var(--radius-lg);
+      padding: 10px 14px;
+      background: linear-gradient(to right, rgba(15,23,42,0.9), rgba(15,23,42,0.5));
+      border: 1px solid var(--border-soft);
+    }
+
+    .top-left {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .top-label {
+      font-size: 11px;
+      color: var(--text-soft);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+
+    .top-title {
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chip {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      color: var(--text-soft);
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.08);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #fecaca;
+    }
+
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.18);
+      border-color: rgba(239, 68, 68, 0.9);
+    }
+
+    .content-card {
+      flex: 1;
+      border-radius: var(--radius-lg);
+      background: radial-gradient(circle at top, #020617, #020617 45%, #020617);
+      border: 1px solid var(--border-soft);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .msg {
+      max-width: 80%;
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.4;
+      border: 1px solid transparent;
+      white-space: pre-wrap;
+    }
+
+    .msg-system {
+      align-self: flex-start;
+      background: transparent;
+      border-color: rgba(55, 65, 81, 0.7);
+      color: var(--text-soft);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+
+    .msg-user {
+      align-self: flex-start;
+      background: rgba(17, 24, 39, 0.9);
+      border-color: #1f2937;
+    }
+
+    .msg-orlem {
+      align-self: flex-start;
+      background: rgba(15, 23, 42, 0.95);
+      border-color: rgba(99, 102, 241, 0.4);
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.9);
+    }
+
+    .msg-tag {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-soft);
+      margin-bottom: 4px;
+    }
+
+    .input-area {
+      border-radius: var(--radius-lg);
+      background: #020617;
+      border: 1px solid var(--border-soft);
+      padding: 8px 10px 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .input-field {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-main);
+      font-size: 13px;
+      outline: none;
+    }
+
+    .input-field::placeholder {
+      color: var(--text-soft);
+    }
+
+    .input-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-soft);
+      padding: 0 2px;
+    }
+
+    .pill {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(31, 41, 55, 0.9);
+      border: 1px solid #1f2937;
+    }
+
+    .input-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .micro-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      border: 1px solid var(--border-soft);
+      background: #020617;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--text-soft);
+      transition: background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
+    }
+
+    .micro-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    .send-btn {
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12px;
+      border: none;
+      background: linear-gradient(to right, #6366f1, #8b5cf6);
+      color: #f9fafb;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 8px 20px rgba(79, 70, 229, 0.3);
+      transition: background 0.12s ease, transform 0.06s ease;
+    }
+
+    .send-btn:hover {
+      transform: translateY(-1px);
+      background: linear-gradient(to right, #4f46e5, #7c3aed);
+    }
+
+    /* Responsivo básico */
+
+    @media (max-width: 900px) {
+      .app-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        display: none; /* em versão mobile dá pra esconder e depois fazer um menu */
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-badge">O</div>
+        <div class="app-title">
+          <span class="app-title-main">ORLEM</span>
+          <span class="app-title-sub">co-piloto de reuniões</span>
+        </div>
+      </div>
+
+      <div class="sidebar-actions">
+        <button class="btn btn-primary btn-sm">
+          + Nova reunião
+        </button>
+        <button class="btn btn-ghost btn-sm">
+          Carregar do banco
+        </button>
+      </div>
+
+      <div class="sidebar-scroll">
+        <div class="meeting-group">
+          <div class="sidebar-section-title">Reuniões ao vivo</div>
+          <div class="meeting-list">
+            <button class="meeting-item active">
+              <span>Reunião via WebSocket</span>
+              <span class="meeting-badge">id 183</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="meeting-group">
+          <div class="sidebar-section-title">Histórico (banco)</div>
+          <div class="meeting-list">
+            <button class="meeting-item">
+              <span>Reunião via WebSocket</span>
+              <span class="meeting-badge">id 182</span>
+            </button>
+            <button class="meeting-item">
+              <span>Reunião via WebSocket</span>
+              <span class="meeting-badge">id 181</span>
+            </button>
+            <button class="meeting-item">
+              <span>Reunião via WebSocket</span>
+              <span class="meeting-badge">id 180</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="status-text">
+          <span class="status-dot"></span>
+          <span>Conectado</span>
+        </div>
+        <span style="font-size:11px; color:var(--text-soft);">local dev</span>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main">
+      <header class="top-bar">
+        <div class="top-left">
+          <span class="top-label">Orlem conectado. Pode começar a reunião.</span>
+          <div class="top-title">
+            sessão: <strong>session-local</strong>
+            <span class="chip">reunião id: 183</span>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button class="btn btn-ghost btn-sm">Resumo</button>
+          <button class="btn btn-ghost btn-sm">Diarizar</button>
+          <button class="btn btn-ghost btn-sm">Exportar</button>
+          <button class="btn btn-danger btn-sm">Encerrar</button>
+        </div>
+      </header>
+
+      <section class="content-card">
+        <div class="messages" id="messages">
+          <div class="msg msg-system">
+            sessão vinculada à reunião #183
+          </div>
+
+          <div class="msg msg-user">
+            orlem, bom dia
+          </div>
+
+          <div class="msg msg-orlem">
+            <div class="msg-tag">orlem</div>
+            Fala, tudo certo? Tô acompanhando aqui, pode seguir que eu entro quando precisar.
+          </div>
+
+          <div class="msg msg-user">
+            orlem, quais os planos pra hoje?
+          </div>
+
+          <div class="msg msg-orlem">
+            <div class="msg-tag">pedido vago</div>
+            Me dá um pouco mais de contexto: estamos falando de qual projeto ou área? Com esses detalhes eu consigo
+            montar um plano de ataque bem objetivo pra hoje.
+          </div>
+        </div>
+
+        <div class="input-area">
+          <div class="input-row">
+            <input
+              id="chat-input"
+              class="input-field"
+              placeholder="Digite ou fale com o Orlem como se ele fosse um sócio na call…"
+            />
+            <div class="input-actions">
+              <button class="micro-btn" title="Aperte para falar">🎙</button>
+              <button class="send-btn">
+                Enviar
+              </button>
+            </div>
+          </div>
+          <div class="input-meta">
+            <span class="pill">Dica: chame pelo nome — “Orlem, o que você acha disso?”</span>
+            <span>Enter para enviar</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

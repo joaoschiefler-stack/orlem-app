@@ -1,520 +1,485 @@
-// ===============================
-// CONFIG
-// ===============================
+// client.js
+(() => {
+  let ws = null;
+  let sessionId = null;
+  let reconnectTimeout = null;
 
-// URL dinâmica, funciona em 127.0.0.1, localhost e depois em produção
-const WS_URL =
-  (location.protocol === "https:" ? "wss://" : "ws://") +
-  location.host +
-  "/ws";
+  const chatEl = document.getElementById("chat-messages");
+  const inputEl = document.getElementById("user-input");
+  const sendBtn = document.getElementById("send-btn");
+  const wsStatusText = document.getElementById("ws-status-text");
+  const connectionStatus = document.getElementById("connection-status");
+  const sessionLabel = document.getElementById("session-label");
+  const sessionDot = document.getElementById("session-dot");
 
-// elementos principais
-const sendBtn = document.getElementById("sendBtn");
-const utterance = document.getElementById("utterance");
-const timeline = document.getElementById("timeline");
+  // painel da direita
+  const summaryItems = document.getElementById("panel-summary-items");
+  const summaryEmpty = document.getElementById("panel-summary-empty");
+  const summaryCount = document.getElementById("panel-summary-count");
 
-const wsStatus = document.getElementById("ws-status");
-const summarizeBtn = document.getElementById("summarize");
-const saveBtn = document.getElementById("save");
-const renameBtn = document.getElementById("rename");
-const diarizeBtn = document.getElementById("diarize");
-const exportBtn = document.getElementById("export");
-const endMeetingBtn = document.getElementById("endMeeting");
+  const decisionsItems = document.getElementById("panel-decisions-items");
+  const decisionsEmpty = document.getElementById("panel-decisions-empty");
+  const decisionsCount = document.getElementById("panel-decisions-count");
 
-const logsList = document.getElementById("logs-list");
-const refreshLogsBtn = document.getElementById("refresh-logs");
-const currentSessionSpan = document.getElementById("current-session");
+  const actionsItems = document.getElementById("panel-actions-items");
+  const actionsEmpty = document.getElementById("panel-actions-empty");
+  const actionsCount = document.getElementById("panel-actions-count");
 
-const meetingsList = document.getElementById("meetings-list");
-const loadMeetingsBtn = document.getElementById("loadMeetings");
+  const diarizeItems = document.getElementById("panel-diarize-items");
+  const diarizeEmpty = document.getElementById("panel-diarize-empty");
+  const diarizeCount = document.getElementById("panel-diarize-count");
 
-const micBtn = document.getElementById("micBtn");
-const micDot = document.getElementById("mic-dot");
+  const btnSummarize = document.getElementById("btn-summarize");
+  const btnDiarize = document.getElementById("btn-diarize");
+  const btnEnd = document.getElementById("btn-end");
 
-// estado
-let socket = null;
-let currentSessionId = null;
-let recog = null;
-let isRecording = false;
-let currentOpenedLog = null;
+  // microfone
+  const btnMic = document.getElementById("btn-mic");
+  let mediaRecorder = null;
+  let recordedChunks = [];
 
-// player de áudio reutilizável para voz do Orlem
-const orlemAudio = new Audio();
-
-// ===============================
-// AUX
-// ===============================
-function addMessage(who, text) {
-  if (!timeline) return;
-  const div = document.createElement("div");
-  div.classList.add("msg");
-  if (who === "user") div.classList.add("user");
-  else if (who === "orlem") div.classList.add("bot");
-  else div.classList.add("system");
-  div.textContent = text;
-  timeline.appendChild(div);
-  timeline.scrollTop = timeline.scrollHeight;
-}
-
-function setSessionLabel(text) {
-  if (currentSessionSpan) {
-    currentSessionSpan.textContent = text;
-  }
-}
-
-function setWsStatus(online) {
-  if (!wsStatus) return;
-  const pillLabel = wsStatus.querySelector(".pill-label") || wsStatus;
-  const dot = wsStatus.querySelector(".dot");
-  if (online) {
-    wsStatus.classList.add("online");
-    if (pillLabel) pillLabel.textContent = "conectado";
-  } else {
-    wsStatus.classList.remove("online");
-    if (pillLabel) pillLabel.textContent = "desconectado";
-  }
-  if (dot) {
-    dot.style.backgroundColor = online ? "#22c55e" : "#ef4444";
-  }
-}
-
-// ===============================
-// FALA DO ORLEM (TTS)
-// ===============================
-async function speakText(text) {
-  // evita ligar TTS pra vazio
-  if (!text || typeof text !== "string" || !text.trim()) return;
-
-  try {
-    const res = await fetch("/speak", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-
-    if (!res.ok) {
-      console.warn("Falha no TTS:", res.status);
-      return;
+  // ----------------- utilidades básicas -----------------
+  function loadOrCreateSessionId() {
+    const key = "orlem_session_id";
+    let stored = window.localStorage.getItem(key);
+    if (!stored) {
+      stored = "sess-" + Math.random().toString(36).slice(2, 10);
+      window.localStorage.setItem(key, stored);
     }
-
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-
-    // usa sempre o mesmo elemento de áudio
-    orlemAudio.src = url;
-    orlemAudio.onended = () => {
-      URL.revokeObjectURL(url);
-    };
-
-    orlemAudio
-      .play()
-      .catch((err) => {
-        console.warn("Navegador bloqueou autoplay de áudio:", err);
-      });
-  } catch (err) {
-    console.error("Erro ao reproduzir voz:", err);
-  }
-}
-
-// ===============================
-// WS
-// ===============================
-function connectWS() {
-  try {
-    socket = new WebSocket(WS_URL);
-  } catch (e) {
-    console.error("Erro ao abrir WebSocket:", e);
-    setWsStatus(false);
-    return;
+    sessionId = stored;
+    updateSessionLabel();
   }
 
-  socket.onopen = () => {
-    console.log("WS aberto em", WS_URL);
-    setWsStatus(true);
-    addMessage("system", "🔌 Orlem conectado. Pode começar a reunião.");
-  };
+  function updateSessionLabel() {
+    if (!sessionLabel) return;
+    sessionLabel.textContent = `sessão — ${sessionId || "..."}`;
+  }
 
-  socket.onmessage = (event) => {
-    let data = null;
-    try {
-      data = JSON.parse(event.data);
-    } catch (e) {
-      // mensagem simples de texto
-      addMessage("orlem", event.data);
-      // se o backend mandar texto puro, ainda assim podemos falar
-      speakText(event.data);
-      return;
-    }
-
-    if (!data || typeof data !== "object") {
-      addMessage("system", String(event.data));
-      return;
-    }
-
-    // mensagens tipadas
-    if (data.type === "status") {
-      if (!currentSessionId && data.session_id) {
-        currentSessionId = data.session_id;
-        setSessionLabel("sessão: " + currentSessionId);
+  function setWsStatus(connected) {
+    if (connected) {
+      wsStatusText.textContent = "Conectado — ouvindo";
+      connectionStatus.textContent = "";
+      if (sessionDot) {
+        sessionDot.style.background = "#22c55e";
+        sessionDot.style.boxShadow = "0 0 10px rgba(34,197,94,0.6)";
       }
+    } else {
+      wsStatusText.textContent = "Desconectado — tentando reconectar…";
+      connectionStatus.textContent =
+        "Se isso ficar travado, recarrega a página.";
+      if (sessionDot) {
+        sessionDot.style.background = "#f97316";
+        sessionDot.style.boxShadow = "0 0 8px rgba(249,115,22,0.6)";
+      }
+    }
+  }
+
+  function autoScroll() {
+    if (!chatEl) return;
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  function createMessageElement(role, text) {
+    const wrapper = document.createElement("div");
+    wrapper.classList.add("message");
+
+    if (role === "user") wrapper.classList.add("user");
+    else if (role === "orlem") wrapper.classList.add("orlem");
+    else wrapper.classList.add("system");
+
+    const label = document.createElement("div");
+    label.classList.add("msg-label");
+
+    if (role === "user") label.textContent = "Você";
+    else if (role === "orlem") label.textContent = "Orlem";
+    else label.textContent = "Sistema";
+
+    const body = document.createElement("div");
+    body.textContent = text;
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(body);
+
+    return wrapper;
+  }
+
+  function addChatMessage(role, text) {
+    if (!chatEl || !text) return;
+    const el = createMessageElement(role, text);
+    chatEl.appendChild(el);
+    autoScroll();
+  }
+
+  // ----------------- painel da direita -----------------
+  function addPanelItem(container, emptyEl, countEl, text) {
+    if (!text || !container) return;
+    if (emptyEl) emptyEl.style.display = "none";
+
+    const item = document.createElement("div");
+    item.classList.add("panel-item");
+    item.textContent = text;
+    container.appendChild(item);
+
+    if (countEl) {
+      const n = container.children.length;
+      const label =
+        n === 1
+          ? countEl.id.includes("actions")
+            ? "1 tarefa"
+            : countEl.id.includes("decisions")
+            ? "1 item"
+            : "1 bloco"
+          : countEl.id.includes("actions")
+          ? `${n} tarefas`
+          : countEl.id.includes("decisions")
+          ? `${n} itens`
+          : `${n} blocos`;
+      countEl.textContent = label;
+    }
+  }
+
+  function routeToPanels(type, text) {
+    if (!text) return;
+
+    if (type === "summary" || text.startsWith("[RESUMO]")) {
+      const clean = text.replace(/^\[RESUMO\]\s*/i, "");
+      addPanelItem(summaryItems, summaryEmpty, summaryCount, clean);
       return;
     }
 
-    if (data.type === "answer") {
-      const texto = data.answer || "";
-      addMessage("orlem", texto);
-      speakText(texto);
+    if (
+      type === "diarize" ||
+      text.startsWith("[DIARIZAÇÃO]") ||
+      text.startsWith("[DIARIZACAO]")
+    ) {
+      const clean = text
+        .replace(/^\[DIARIZAÇÃO\]\s*/i, "")
+        .replace(/^\[DIARIZACAO\]\s*/i, "");
+      addPanelItem(diarizeItems, diarizeEmpty, diarizeCount, clean);
       return;
     }
 
-    if (data.type === "summary") {
-      const texto = "RESUMO: " + (data.answer || "");
-      addMessage("orlem", "📄 " + texto);
-      speakText(texto);
+    const low = text.toLowerCase();
+    if (
+      low.includes("responsável") ||
+      low.includes("responsavel") ||
+      low.includes("prazo") ||
+      low.includes("tarefa") ||
+      low.includes("próximo passo") ||
+      low.includes("proximo passo")
+    ) {
+      addPanelItem(actionsItems, actionsEmpty, actionsCount, text);
       return;
     }
 
-    if (data.type === "info") {
-      const texto = data.answer || "";
-      addMessage("system", texto);
-      // infos curtas também podem ser faladas
-      speakText(texto);
+    if (
+      low.includes("decidimos") ||
+      low.includes("ficou decidido") ||
+      low.includes("decisão") ||
+      low.includes("decisao")
+    ) {
+      addPanelItem(decisionsItems, decisionsEmpty, decisionsCount, text);
       return;
     }
+  }
 
-    if (data.type === "diarize") {
-      const texto = data.answer || "";
-      addMessage("orlem", "🧑‍🤝‍🧑 " + texto);
-      speakText(texto);
-      return;
-    }
-
-    if (data.type === "end_summary") {
-      const texto = "Reunião encerrada. Resumo final: " + (data.answer || "");
-      addMessage(
-        "orlem",
-        "✅ Reunião encerrada.\n\n📄 RESUMO FINAL:\n" + (data.answer || "")
-      );
-      speakText(texto);
-      return;
-    }
-
-    // fallback
-    addMessage("system", JSON.stringify(data));
-  };
-
-  socket.onclose = () => {
-    console.log("WS fechado, tentando reconectar em 2s…");
-    setWsStatus(false);
-    setTimeout(connectWS, 2000);
-  };
-
-  socket.onerror = (err) => {
-    console.error("Erro no WebSocket:", err);
-  };
-}
-
-// ===============================
-// ENVIO
-// ===============================
-if (sendBtn && utterance) {
-  sendBtn.onclick = () => {
-    const text = utterance.value.trim();
-    if (!text || !socket || socket.readyState !== WebSocket.OPEN) return;
-    addMessage("user", text);
-    socket.send(JSON.stringify({ text, session_id: currentSessionId }));
-    utterance.value = "";
-  };
-
-  utterance.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendBtn.onclick();
-    }
-  });
-}
-
-// ===============================
-// AÇÕES DE TOPO
-// ===============================
-if (summarizeBtn) {
-  summarizeBtn.onclick = () => {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    socket.send(
-      JSON.stringify({
-        action: "summarize",
-        session_id: currentSessionId,
-      })
-    );
-  };
-}
-
-if (saveBtn) {
-  saveBtn.onclick = () => {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    socket.send(
-      JSON.stringify({ action: "save", session_id: currentSessionId })
-    );
-  };
-}
-
-if (renameBtn) {
-  renameBtn.onclick = async () => {
-    let current = currentOpenedLog || currentSessionId;
-    if (!current) {
-      alert("Nenhuma sessão para renomear.");
-      return;
-    }
-    const newName = window.prompt(
-      "Nome novo para o log (ex: cliente-acme-demo):"
-    );
-    if (!newName) return;
-
-    const body = {
-      old_name: current.endsWith(".jsonl") ? current : current + ".jsonl",
-      new_name: newName,
-    };
-
+  // ----------------- TTS -----------------
+  async function speak(text) {
+    if (!text) return;
     try {
-      const res = await fetch("/logs/rename", {
+      const resp = await fetch("/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ text }),
       });
+      if (!resp.ok) return;
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        alert("Erro ao renomear: " + (data.detail || res.status));
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.play();
+    } catch (e) {
+      console.error("Erro ao tocar voz do Orlem:", e);
+    }
+  }
+
+  // ----------------- WebSocket -----------------
+  function connect() {
+    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+    const url = `${protocol}://${window.location.host}/ws`;
+
+    try {
+      ws = new WebSocket(url);
+    } catch (err) {
+      console.error("Erro ao criar WebSocket:", err);
+      setWsStatus(false);
+      return;
+    }
+
+    ws.addEventListener("open", () => {
+      setWsStatus(true);
+      if (sessionId) {
+        ws.send(JSON.stringify({ session_id: sessionId }));
+      }
+    });
+
+    ws.addEventListener("message", (event) => {
+      let payload;
+      try {
+        payload = JSON.parse(event.data);
+      } catch (e) {
+        console.warn("Mensagem inválida:", event.data);
         return;
       }
 
-      const data = await res.json();
-      currentOpenedLog = data.new_name;
-      setSessionLabel("log: " + data.new_name);
-      loadLogs();
-    } catch (e) {
-      console.error(e);
-      alert("Erro de rede ao renomear log.");
-    }
-  };
-}
+      const type = payload.type;
+      const answer = payload.answer;
+      const serverSession = payload.session_id;
 
-if (diarizeBtn) {
-  diarizeBtn.onclick = () => {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    socket.send(
-      JSON.stringify({ action: "diarize", session_id: currentSessionId })
-    );
-  };
-}
+      if (serverSession && !sessionId) {
+        sessionId = serverSession;
+        window.localStorage.setItem("orlem_session_id", sessionId);
+        updateSessionLabel();
+      }
 
-if (exportBtn) {
-  exportBtn.onclick = async () => {
-    const filename =
-      currentOpenedLog || (currentSessionId ? currentSessionId + ".jsonl" : null);
-    if (!filename) {
-      alert("Nenhum log selecionado pra exportar.");
+      switch (type) {
+        case "status":
+          if (!sessionId && payload.session_id) {
+            sessionId = payload.session_id;
+            window.localStorage.setItem("orlem_session_id", sessionId);
+            updateSessionLabel();
+          }
+          break;
+
+        case "info":
+          if (answer) addChatMessage("system", answer);
+          break;
+
+        case "warn":
+          if (answer) addChatMessage("system", answer);
+          break;
+
+        case "answer":
+          if (answer) {
+            addChatMessage("orlem", answer);
+            routeToPanels("answer", answer);
+            speak(answer); // fala a resposta
+          }
+          break;
+
+        case "summary":
+          if (answer) {
+            addChatMessage("orlem", answer);
+            routeToPanels("summary", answer);
+          }
+          break;
+
+        case "diarize":
+          if (answer) {
+            addChatMessage("orlem", answer);
+            routeToPanels("diarize", answer);
+          }
+          break;
+
+        default:
+          console.log("Tipo desconhecido:", payload);
+      }
+    });
+
+    ws.addEventListener("close", () => {
+      setWsStatus(false);
+      ws = null;
+      if (!reconnectTimeout) {
+        reconnectTimeout = setTimeout(() => {
+          reconnectTimeout = null;
+          connect();
+        }, 2000);
+      }
+    });
+
+    ws.addEventListener("error", (err) => {
+      console.error("WebSocket error:", err);
+      setWsStatus(false);
+    });
+  }
+
+  function sendPayload(payload) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      addChatMessage(
+        "system",
+        "Ainda não estou conectado. Tenta de novo em alguns segundos."
+      );
       return;
     }
     try {
-      const res = await fetch("/logs/" + filename);
-      if (!res.ok) {
-        alert("Não consegui baixar o log.");
-        return;
-      }
-      const text = await res.text();
-      const blob = new Blob([text], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
+      ws.send(JSON.stringify(payload));
     } catch (e) {
-      console.error(e);
-      alert("Erro ao exportar log.");
+      console.error("Erro ao enviar payload:", e);
     }
-  };
-}
+  }
 
-if (endMeetingBtn) {
-  endMeetingBtn.onclick = () => {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    socket.send(
-      JSON.stringify({
-        action: "end_meeting",
-        session_id: currentSessionId,
-      })
+  // ----------------- handlers de UI -----------------
+  function handleSend() {
+    const text = (inputEl.value || "").trim();
+    if (!text) return;
+
+    addChatMessage("user", text);
+
+    const payload = {
+      text,
+      session_id: sessionId,
+    };
+    sendPayload(payload);
+
+    inputEl.value = "";
+    inputEl.focus();
+  }
+
+  function handleSummarize() {
+    addChatMessage("system", "↺ Pedindo um resumo rápido para o Orlem…");
+    sendPayload({
+      action: "summarize",
+      session_id: sessionId,
+    });
+  }
+
+  function handleDiarize() {
+    addChatMessage("system", "👥 Pedindo diarização (por falante) para o Orlem…");
+    sendPayload({
+      action: "diarize",
+      session_id: sessionId,
+    });
+  }
+
+  function handleEnd() {
+    addChatMessage(
+      "system",
+      "🛑 Encerrando reunião — o Orlem vai gerar um resumo final."
     );
-  };
-}
+    sendPayload({
+      action: "end",
+      session_id: sessionId,
+    });
+  }
 
-// ===============================
-// LOGS (arquivos .jsonl)
-// ===============================
-function loadLogs() {
-  fetch("/logs")
-    .then((r) => r.json())
-    .then((data) => {
-      if (!logsList) return;
-      logsList.innerHTML = "";
-      (data.logs || []).forEach((logname) => {
-        const item = document.createElement("div");
-        item.textContent = logname;
-        item.className = "log-item";
-        item.onclick = () => viewLog(logname, item);
-        logsList.appendChild(item);
-      });
-    })
-    .catch((err) => console.error(err));
-}
+  // ----------------- microfone / STT -----------------
+  async function toggleRecording() {
+    if (!btnMic) return;
 
-function viewLog(logname, itemEl) {
-  document
-    .querySelectorAll(".log-item")
-    .forEach((el) => el.classList.remove("active"));
-  itemEl.classList.add("active");
-  currentOpenedLog = logname;
+    // se não está gravando, começa
+    if (!mediaRecorder || mediaRecorder.state === "inactive") {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+        mediaRecorder = new MediaRecorder(stream);
+        recordedChunks = [];
 
-  fetch("/logs/" + logname)
-    .then((r) => r.text())
-    .then((text) => {
-      if (!timeline) return;
-      timeline.innerHTML = "";
-      const lines = text.split("\n").filter(Boolean);
-      lines.forEach((line) => {
-        try {
-          const obj = JSON.parse(line);
-          const role = obj.role;
-          const content = obj.content;
-          addMessage(role === "user" ? "user" : "orlem", content);
-        } catch (e) {
-          addMessage("system", line);
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) recordedChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          btnMic.classList.remove("recording");
+
+          const blob = new Blob(recordedChunks, { type: "audio/webm" });
+          if (!blob.size) {
+            addChatMessage(
+              "system",
+              "Não capturei áudio nenhum. Tenta de novo, por favor."
+            );
+            return;
+          }
+
+          addChatMessage(
+            "system",
+            "Parando gravação, transcrevendo o áudio…"
+          );
+
+          const form = new FormData();
+          form.append("file", blob, "audio.webm");
+
+          try {
+            const resp = await fetch("/stt", {
+              method: "POST",
+              body: form,
+            });
+            const data = await resp.json();
+
+            if (data && data.text) {
+              const text = data.text.trim();
+              if (!text) {
+                addChatMessage(
+                  "system",
+                  "Não consegui entender o áudio. Tenta falar de novo, mais perto do microfone."
+                );
+                return;
+              }
+
+              // mostra como mensagem do usuário
+              addChatMessage("user", text);
+              // manda pro Orlem via WebSocket
+              sendPayload({
+                text,
+                session_id: sessionId,
+              });
+            } else {
+              addChatMessage(
+                "system",
+                "Erro ao transcrever o áudio. Tenta novamente."
+              );
+            }
+          } catch (err) {
+            console.error("Erro no /stt:", err);
+            addChatMessage(
+              "system",
+              "Erro ao transcrever o áudio. Tenta novamente."
+            );
+          }
+        };
+
+        mediaRecorder.start();
+        btnMic.classList.add("recording");
+        addChatMessage(
+          "system",
+          "Gravando… Clique de novo no microfone para parar."
+        );
+      } catch (err) {
+        console.error("Erro ao acessar microfone:", err);
+        addChatMessage(
+          "system",
+          "Não consegui acessar o microfone. Confere as permissões do navegador."
+        );
+      }
+    } else if (mediaRecorder.state === "recording") {
+      mediaRecorder.stop();
+    }
+  }
+
+  // ----------------- init -----------------
+  window.addEventListener("DOMContentLoaded", () => {
+    loadOrCreateSessionId();
+    connect();
+
+    if (sendBtn) sendBtn.addEventListener("click", handleSend);
+
+    if (inputEl) {
+      inputEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          handleSend();
         }
       });
-      setSessionLabel("log: " + logname);
-    });
-}
-
-if (refreshLogsBtn) {
-  refreshLogsBtn.onclick = loadLogs;
-}
-
-// ===============================
-// REUNIÕES (DB)
-// ===============================
-function loadMeetingsFromDB() {
-  fetch("/api/meetings")
-    .then((r) => r.json())
-    .then((data) => {
-      if (!meetingsList) return;
-      meetingsList.innerHTML = "";
-      (data.meetings || []).forEach((m) => {
-        const item = document.createElement("div");
-        item.className = "meeting-item";
-        const title = m.title || `Reunião #${m.id}`;
-        item.innerHTML = `
-          <div>${title}</div>
-          <span class="meta">id ${m.id}</span>
-        `;
-        item.onclick = () => viewMeeting(m.id, item);
-        meetingsList.appendChild(item);
-      });
-    })
-    .catch((err) => console.error(err));
-}
-
-function viewMeeting(meetingId, itemEl) {
-  document
-    .querySelectorAll(".meeting-item")
-    .forEach((el) => el.classList.remove("active"));
-  itemEl.classList.add("active");
-
-  fetch(`/api/meetings/${meetingId}`)
-    .then((r) => r.json())
-    .then((data) => {
-      if (!timeline) return;
-      timeline.innerHTML = "";
-      const msgs = data.messages || [];
-      msgs.forEach((m) => {
-        addMessage(m.role === "user" ? "user" : "orlem", m.content || "");
-      });
-      setSessionLabel("reunião id: " + meetingId);
-    })
-    .catch((err) => console.error(err));
-}
-
-if (loadMeetingsBtn) {
-  loadMeetingsBtn.onclick = loadMeetingsFromDB;
-}
-
-// ===============================
-// MIC (Web Speech API)
-// ===============================
-function initSTT() {
-  const SpeechRecognition =
-    window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    alert("Seu navegador não suporta reconhecimento de voz (use Chrome).");
-    return null;
-  }
-  const rec = new SpeechRecognition();
-  rec.lang = "pt-BR";
-  rec.continuous = false;
-  rec.interimResults = false;
-  rec.onresult = (e) => {
-    const text = e.results[0][0].transcript;
-    if (utterance) {
-      utterance.value = text;
-      if (sendBtn) sendBtn.onclick();
     }
-  };
-  rec.onerror = (e) => {
-    console.warn("erro no mic", e);
-    stopRecording();
-  };
-  rec.onend = () => {
-    stopRecording();
-  };
-  return rec;
-}
 
-function startRecording() {
-  if (!recog) recog = initSTT();
-  if (!recog) return;
-  isRecording = true;
-  if (micBtn) micBtn.classList.add("recording");
-  if (micDot) micDot.classList.add("on");
-  try {
-    recog.start();
-  } catch (e) {
-    console.warn("erro ao iniciar STT", e);
-  }
-}
+    if (btnSummarize) btnSummarize.addEventListener("click", handleSummarize);
+    if (btnDiarize) btnDiarize.addEventListener("click", handleDiarize);
+    if (btnEnd) btnEnd.addEventListener("click", handleEnd);
+    if (btnMic) btnMic.addEventListener("click", toggleRecording);
 
-function stopRecording() {
-  isRecording = false;
-  if (micBtn) micBtn.classList.remove("recording");
-  if (micDot) micDot.classList.remove("on");
-  if (recog) {
-    try {
-      recog.stop();
-    } catch (e) {}
-  }
-}
-
-if (micBtn) {
-  micBtn.onclick = () => {
-    if (isRecording) stopRecording();
-    else startRecording();
-  };
-}
-
-// ===============================
-// BOOT
-// ===============================
-window.addEventListener("load", () => {
-  connectWS();
-  loadLogs();
-  loadMeetingsFromDB();
-});
+    addChatMessage(
+      "system",
+      "Orlem conectado. Vai acompanhando a reunião em silêncio; quando quiser que ele entre na conversa, chama pelo nome: “Orlem, …”."
+    );
+  });
+})();

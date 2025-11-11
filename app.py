@@ -1,18 +1,30 @@
 # app.py
 import os
+import io
 import json
 from typing import Dict, Any, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
+from fastapi import (
+    FastAPI,
+    WebSocket,
+    WebSocketDisconnect,
+    HTTPException,
+    Query,
+    UploadFile,
+    File,
+)
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
+from openai import OpenAI
 
 from brain import (
     ask_orlem,
     summarize_transcript,
     diarize_transcript,
-    client_status_message,  # continua importado, mesmo se não usar agora
+    extract_decisions,
+    extract_actions,
+    client_status_message,  # mantido p/ compat
 )
 from db import (
     init_db,
@@ -23,17 +35,18 @@ from db import (
     get_meeting_messages,
 )
 
-from openai import OpenAI
-import io
-
 load_dotenv()
 
 app = FastAPI(title="Orlem - Assistente de Reuniões com IA")
 init_db()
 
+# cliente OpenAI único
+client = OpenAI()
+
 # =========================================
 # FRONTEND
 # =========================================
+
 app.mount("/web", StaticFiles(directory="web"), name="web")
 
 
@@ -56,7 +69,6 @@ def _log_filename(session_id: str) -> str:
 def append_to_log(session_id: str, role: str, content: str):
     os.makedirs(LOG_DIR, exist_ok=True)
     with open(_log_filename(session_id), "a", encoding="utf-8") as f:
-        # ensure_ascii=False pra não zoar acento
         f.write(
             json.dumps({"role": role, "content": content}, ensure_ascii=False)
             + "\n"
@@ -135,6 +147,43 @@ async def api_meeting_open(session_id: str = Query(...)):
     return {"meeting_id": None, "has_log": has_log}
 
 
+def _build_transcript_from_meeting(meeting_id: int) -> str:
+    msgs = get_meeting_messages(meeting_id)
+    if not msgs:
+        return ""
+    return "\n".join(f"{m['role']}: {m['content']}" for m in msgs)
+
+
+@app.get("/api/meetings/{meeting_id}/summary")
+async def api_meeting_summary(meeting_id: int):
+    transcript = _build_transcript_from_meeting(meeting_id)
+    if not transcript.strip():
+        raise HTTPException(status_code=400, detail="Reunião sem mensagens.")
+
+    summary = await summarize_transcript(transcript)
+    return {"meeting_id": meeting_id, "summary": summary}
+
+
+@app.get("/api/meetings/{meeting_id}/decisions")
+async def api_meeting_decisions(meeting_id: int):
+    transcript = _build_transcript_from_meeting(meeting_id)
+    if not transcript.strip():
+        raise HTTPException(status_code=400, detail="Reunião sem mensagens.")
+
+    decisions = await extract_decisions(transcript)
+    return {"meeting_id": meeting_id, "decisions": decisions}
+
+
+@app.get("/api/meetings/{meeting_id}/actions")
+async def api_meeting_actions(meeting_id: int):
+    transcript = _build_transcript_from_meeting(meeting_id)
+    if not transcript.strip():
+        raise HTTPException(status_code=400, detail="Reunião sem mensagens.")
+
+    actions = await extract_actions(transcript)
+    return {"meeting_id": meeting_id, "actions": actions}
+
+
 # =========================================
 # WEBSOCKET
 # =========================================
@@ -147,7 +196,6 @@ active_sessions: Dict[str, int] = {}
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
 
-    # session_id vindo por query param (futuro deploy) ou usa um fallback
     params = ws.query_params
     session_id: Optional[str] = params.get("session_id") or None
     if session_id is None:
@@ -156,7 +204,7 @@ async def websocket_endpoint(ws: WebSocket):
     meeting_id: Optional[int] = None
     user_id = get_or_create_default_user()
 
-    # status simples, só pra client saber o id da sessão
+    # manda status inicial
     try:
         await ws.send_text(
             json.dumps(
@@ -173,7 +221,6 @@ async def websocket_endpoint(ws: WebSocket):
         while True:
             data = await ws.receive_text()
 
-            # tenta JSON
             try:
                 payload = json.loads(data)
             except json.JSONDecodeError:
@@ -182,9 +229,9 @@ async def websocket_endpoint(ws: WebSocket):
             action = payload.get("action")
             text = payload.get("text")
             sess_from_front = payload.get("session_id") or session_id
-            session_id = sess_from_front  # normaliza
+            session_id = sess_from_front
 
-            # cria meeting apenas no primeiro envio real de mensagem do usuário
+            # criação on-demand da reunião
             if meeting_id is None and (text or action in {"summarize", "diarize", "end"}):
                 meeting_id = create_meeting(
                     user_id,
@@ -201,7 +248,7 @@ async def websocket_endpoint(ws: WebSocket):
                     )
                 )
 
-            # ----- ações especiais -----
+            # --------- ações especiais ---------
 
             if action == "summarize":
                 if meeting_id is None:
@@ -295,8 +342,7 @@ async def websocket_endpoint(ws: WebSocket):
                     )
                 continue
 
-            # ----- mensagem normal do usuário -----
-
+            # --------- mensagem normal ---------
             if text:
                 if meeting_id is None:
                     meeting_id = create_meeting(
@@ -314,11 +360,30 @@ async def websocket_endpoint(ws: WebSocket):
                         )
                     )
 
+                # registra sempre (Orlem está ouvindo)
                 append_to_log(session_id, "user", text)
                 add_message(meeting_id, "user", text)
 
-                # chama o cérebro
+                lower_text = text.lower()
+                if "orlem" not in lower_text:
+                    # apenas ouvindo, não responde
+                    continue
+
                 answer = await ask_orlem(text)
+
+                if answer is None:
+                    continue
+
+                if isinstance(answer, dict):
+                    answer = (
+                        answer.get("answer")
+                        or answer.get("text")
+                        or json.dumps(answer, ensure_ascii=False)
+                    )
+
+                answer = str(answer)
+                if not answer.strip():
+                    continue
 
                 append_to_log(session_id, "orlem", answer)
                 add_message(meeting_id, "orlem", answer)
@@ -346,24 +411,54 @@ async def websocket_endpoint(ws: WebSocket):
 # TTS / FALA DO ORLEM
 # =========================================
 
-client = OpenAI()
-
 
 @app.post("/speak")
 async def speak_endpoint(payload: dict):
-    text = payload.get("text", "")
-    if not text:
-        return {"error": "Texto vazio"}
+  text = payload.get("text", "")
+  if not text:
+      return {"error": "Texto vazio"}
 
-    # Gera voz natural a partir do texto
-    speech = client.audio.speech.create(
-        model="gpt-4o-mini-tts",
-        voice="alloy",  # outras opções: verse, coral, etc.
-        input=text,
-    )
+  try:
+      speech = client.audio.speech.create(
+          model="gpt-4o-mini-tts",
+          voice="coral",
+          input=text,
+      )
+      audio_bytes = speech.read()
+      return StreamingResponse(
+          io.BytesIO(audio_bytes),
+          media_type="audio/mpeg",
+      )
+  except Exception as e:
+      print("ERRO /speak:", e)
+      return {
+          "error": "Falha na voz, continuo por texto",
+          "detail": str(e),
+          "text": text,
+      }
 
-    # Retorna o áudio como streaming
-    return StreamingResponse(
-        io.BytesIO(speech.read()),
-        media_type="audio/mpeg",
-    )
+
+# =========================================
+# STT / TRANSCRIÇÃO DO ÁUDIO
+# =========================================
+
+
+@app.post("/stt")
+async def stt_endpoint(file: UploadFile = File(...)):
+    """
+    Recebe áudio (webm/ogg) e devolve o texto transcrito.
+    """
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        return {"error": "Arquivo de áudio vazio."}
+
+    try:
+        result = client.audio.transcriptions.create(
+            model="whisper-1",  # pode trocar pelo modelo de STT que preferir
+            file=("audio.webm", audio_bytes, file.content_type or "audio/webm"),
+        )
+        text = getattr(result, "text", "") or ""
+        return {"text": text}
+    except Exception as e:
+        print("ERRO /stt:", e)
+        return {"error": str(e)}
