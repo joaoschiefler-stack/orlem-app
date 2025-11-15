@@ -123,7 +123,13 @@ async def rename_log(payload: Dict[str, Any]):
 # API (reuniões / banco)
 # =========================================
 @app.get("/api/meetings")
-async def api_list_meetings():
+async def api_list_meetings(user_key: Optional[str] = Query(None)):
+    """
+    Lista reuniões do usuário.
+    Por enquanto TODO MUNDO ainda usa o mesmo usuário padrão do banco.
+    O parâmetro user_key já deixa a rota preparada para, no futuro,
+    mapearmos isso para um usuário real (login do SaaS).
+    """
     user_id = get_or_create_default_user()
     meetings = list_meetings(user_id)
     return {"meetings": meetings}
@@ -136,10 +142,16 @@ async def api_get_meeting(meeting_id: int):
 
 
 @app.get("/api/meeting/open")
-async def api_meeting_open(session_id: str = Query(...)):
+async def api_meeting_open(
+    session_id: str = Query(...),
+    user_key: Optional[str] = Query(None),
+):
     """
     Retorna meeting_id existente para session_id (se já houver mensagens),
     senão None — criação passa a ser on-demand (primeira mensagem).
+
+    O parâmetro user_key já prepara o caminho para, no futuro,
+    vincular a reunião a um usuário real do SaaS.
     """
     user_id = get_or_create_default_user()
     logname = f"{session_id}.jsonl"
@@ -198,9 +210,12 @@ async def websocket_endpoint(ws: WebSocket):
 
     params = ws.query_params
     session_id: Optional[str] = params.get("session_id") or None
+    user_key: Optional[str] = params.get("user_id") or params.get("user_key")
+
     if session_id is None:
         session_id = "session-local"
 
+    # no futuro vamos usar user_key -> user_id real (multi-tenant)
     meeting_id: Optional[int] = None
     user_id = get_or_create_default_user()
 
