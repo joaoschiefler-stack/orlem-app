@@ -442,88 +442,89 @@
   }
 
   // ----------------- microfone / STT -----------------
-  async function toggleRecording() {
-    if (!btnMic) return;
+  // ----------------- microfone / STT -----------------
+async function toggleRecording() {
+  if (!btnMic) return;
 
-    // se não está gravando, começa
-    if (!mediaRecorder || mediaRecorder.state === "inactive") {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
-        recordedChunks = [];
+  // se não está gravando, começa
+  if (!mediaRecorder || mediaRecorder.state === "inactive") {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      recordedChunks = [];
 
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) recordedChunks.push(e.data);
-        };
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+      };
 
-        mediaRecorder.onstop = async () => {
-          btnMic.classList.remove("recording");
+      mediaRecorder.onstop = async () => {
+        btnMic.classList.remove("recording");
 
-          const blob = new Blob(recordedChunks, { type: "audio/webm" });
-          if (!blob.size) {
-            addChatMessage(
-              "system",
-              "Não veio áudio nenhum. Tenta de novo, mais perto do microfone."
-            );
-            return;
-          }
+        const blob = new Blob(recordedChunks, { type: "audio/webm" });
+        if (!blob.size) {
+          addChatMessage(
+            "system",
+            "Não veio áudio nenhum. Tenta de novo, mais perto do microfone."
+          );
+          return;
+        }
 
-          // aqui a gente fica quieto no chat, só manda pro backend transcrever
-          const form = new FormData();
-          form.append("file", blob, "audio.webm");
+        const form = new FormData();
+        form.append("file", blob, "audio.webm");
 
-          try {
-            const resp = await fetch("/stt", {
-              method: "POST",
-              body: form,
-            });
-            const data = await resp.json();
+        try {
+          const resp = await fetch("/stt", {
+            method: "POST",
+            body: form,
+          });
+          const data = await resp.json();
 
-            if (data && data.text) {
-              const text = data.text.trim();
-              if (!text) {
-                addChatMessage(
-                  "system",
-                  "Não consegui entender o áudio. Tenta falar de novo, mais perto do microfone."
-                );
-                return;
-              }
-
-              // mostra como mensagem do usuário
-              addChatMessage("user", text);
-              // manda pro Orlem via WebSocket
-              sendPayload({
-                text,
-                session_id: sessionId,
-              });
-            } else {
+          if (data && data.text) {
+            const text = data.text.trim();
+            if (!text) {
               addChatMessage(
                 "system",
-                "Não consegui entender o áudio. Pode tentar de novo?"
+                "Não consegui entender o áudio. Tenta falar de novo, mais perto do microfone."
               );
+              return;
             }
-          } catch (err) {
-            console.error("Erro no /stt:", err);
+
+            addChatMessage("user", text);
+            sendPayload({
+              text,
+              session_id: sessionId,
+            });
+          } else {
             addChatMessage(
               "system",
-              "Rolou um erro técnico na transcrição. Tenta novamente em alguns segundos."
+              "Não consegui entender o áudio. Pode tentar de novo?"
             );
           }
-        };
+        } catch (err) {
+          console.error("Erro no /stt:", err);
+          addChatMessage(
+            "system",
+            "Rolou um erro técnico na transcrição. Tenta novamente em alguns segundos."
+          );
+        }
+      };
 
+      mediaRecorder.start();
+      btnMic.classList.add("recording");
+      // se precisar, pode chamar setMicState("recording") aqui
 
-        mediaRecorder.start();
-        btnMic.classList.add("recording");
-        // não precisamos spammar o chat, o botão vermelho já mostra que está gravando
-
-        console.error("Erro ao acessar microfone:", err);
-        setMicState("error");
-        sys("Não consegui acessar o microfone. Confere as permissões do navegador.");
-      }
-    } else if (mediaRecorder.state === "recording") {
-      mediaRecorder.stop();
+    } catch (err) {
+      console.error("Erro ao acessar microfone:", err);
+      setMicState("error");
+      sys("Não consegui acessar o microfone. Confere as permissões do navegador.");
     }
+
+  } else if (mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+    // aqui poderíamos chamar setMicState("idle") se quiser
   }
+}
+
 
   // ----------------- init -----------------
   window.addEventListener("DOMContentLoaded", () => {

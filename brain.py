@@ -4,7 +4,7 @@ ORLEM — cérebro (fase 1.6) com:
 - Modo conversa (sócio na call) SEM ata/lista
 - Estilos: interno / cliente / neutro (auto por heurística)
 - Comandos de tom: "modo interno", "modo cliente", "tom neutro", "resetar tom"
-- Ferramentas: resumo/decisões/próximos passos/etc (inalteradas)
+- Ferramentas: resumo/decisões/próximos passos/etc
 """
 
 import os
@@ -62,13 +62,18 @@ STYLE_INTERNO = (
 
 # Modos especiais (quando pedirem explicitamente)
 SUMMARIZER_SYSTEM = (
-    "Você é o Orlem e vai resumir uma reunião. "
-    "Estruture assim:\n"
-    "1) Contexto rápido (1 frase)\n"
-    "2) Pontos principais (bullets curtos)\n"
-    "3) Decisões (se houver)\n"
-    "4) Próximos passos (com responsáveis se possível)\n"
-    "Se faltar info, diga 'Definir responsável'."
+    "Você é o Orlem e vai resumir uma reunião.\n"
+    "Responda SEMPRE neste formato exato:\n\n"
+    "Resumo rápido:\n"
+    "- ponto 1\n"
+    "- ponto 2\n"
+    "- ponto 3\n\n"
+    "Decisões:\n"
+    "- decisão 1 (ou 'Nenhuma decisão registrada.')\n\n"
+    "Próximos passos:\n"
+    "- Ação — Responsável — Prazo\n"
+    "Se faltar responsável ou prazo, preencha de forma razoável e marque com '(inferido)'. "
+    "Não faça perguntas e não peça mais contexto."
 )
 
 DECISIONS_SYSTEM = (
@@ -148,11 +153,11 @@ TRAINING_SYSTEM = "Roteiro de treinamento curto, em tópicos, para apresentar na
 # 2. Helpers
 # ---------------------------------------------------------
 def _chat(messages: List[Dict[str, Any]], model: Optional[str] = None) -> str:
-    resp = client.chat.completions.create(
-        model=model or MODEL_NAME,
-        messages=messages,
-    )
-    return resp.choices[0].message.content
+  resp = client.chat.completions.create(
+      model=model or MODEL_NAME,
+      messages=messages,
+  )
+  return resp.choices[0].message.content
 
 def _keep(text: str, max_len: int = 1100) -> str:
     if len(text) <= max_len:
@@ -235,7 +240,7 @@ def is_greeting(s: str) -> bool:
 
 
 # ---------------------------------------------------------
-# 3.1 Pedido vago (ajustado pra não atrapalhar “começar do zero”)
+# 3.1 Pedido vago
 # ---------------------------------------------------------
 VAGUE_TRIGGERS = [
     "ideia", "ideias", "brainstorm",
@@ -244,7 +249,6 @@ VAGUE_TRIGGERS = [
     "o que fazer", "me ajuda", "planejar", "plano",
     "campanha", "conteúdo", "conteudo"
 ]
-# (removi “como começar”, “como podemos” etc., pois isso tava disparando o checklist)
 
 def needs_clarification(s: str) -> bool:
     s = _norm(s)
@@ -268,10 +272,8 @@ CLARIFY_MESSAGE = (
 # ---------------------------------------------------------
 def _detect_tone_auto(s: str) -> str:
     s = _norm(s)
-    # Sinais de “cliente”
     if any(k in s for k in ["cliente", "proposta", "contrato", "apresentar ao cliente", "call com o cliente"]):
         return "cliente"
-    # Sinais de “interno”
     if any(k in s for k in ["interno", "alinhamento do time", "sprint", "retro", "roadmap", "deploy", "estimativa"]):
         return "interno"
     return "neutro"
@@ -284,10 +286,6 @@ def _tone_style(tone: str) -> str:
     return STYLE_NEUTRO
 
 def _maybe_handle_tone_command(raw: str) -> Optional[str]:
-    """
-    Processa comandos de tom. Retorna uma resposta curta se mudar algo;
-    caso contrário, None.
-    """
     global _MEETING_TONE
     s = _norm(raw)
     if "modo interno" in s:
@@ -410,13 +408,12 @@ async def gen_training(context: str) -> str:
 
 
 # ---------------------------------------------------------
-# 5. Modo conversa (sócio na call) com guarda anti-ata
+# 5. Modo conversa (sócio na call)
 # ---------------------------------------------------------
 def _compose_system_with_tone(tone: str) -> str:
     return BASE_SYSTEM + "\n" + _tone_style(tone)
 
 async def answer_like_partner(text: str, tone: str) -> str:
-    # 1ª passada
     user_prompt = (
         "Responda como se estivesse falando AO VIVO na reunião, "
         "em 2 a 4 frases, SEM usar listas, bullets ou numeração. "
@@ -430,7 +427,6 @@ async def answer_like_partner(text: str, tone: str) -> str:
     ]
     resposta = _keep(_chat(msgs))
 
-    # Heurística anti-ata
     low = resposta.lower()
     tem_ata = (
         "contexto rápido" in low or "contexto rapido" in low or
@@ -463,12 +459,10 @@ async def ask_orlem(user_message: str) -> Optional[str]:
     msg = user_message or ""
     low = _norm(msg)
 
-    # 6.1 Comandos de tom (não precisam dizer "orlem")
     tone_ack = _maybe_handle_tone_command(low)
     if tone_ack:
         return tone_ack
 
-    # 6.2 Só responde se foi chamado OU se é um comando claro
     is_called = "orlem" in low
     is_command = any([
         is_client_message(low), is_delay(low), is_summary(low), is_decisions(low),
@@ -481,23 +475,18 @@ async def ask_orlem(user_message: str) -> Optional[str]:
     if not (is_called or is_command):
         return None
 
-    # 6.3 Cumprimento curto
     if is_called and is_greeting(low) and not is_command:
         return "Fala, tudo certo? Tô acompanhando aqui; pode tocar que eu entro quando precisar."
 
-    # 6.4 Pedido muito aberto → pede contexto (sem virar ata)
     if is_called and not is_command and needs_clarification(msg):
         return CLARIFY_MESSAGE
 
-    # 6.5 Remover prefixo "orlem " pra resposta ficar natural
     if low.startswith("orlem"):
         msg = msg.split(" ", 1)[1] if " " in msg else ""
 
-    # 6.6 Brainstorm vago → pedir contexto primeiro
     if is_brainstorm(low) and needs_clarification(msg):
         return CLARIFY_MESSAGE
 
-    # 6.7 Roteamento p/ modos especiais
     if is_client_message(low):  return await gen_client_message(msg)
     if is_delay(low):           return await gen_delay_message(msg)
     if is_summary(low):         return await gen_summary(msg)
@@ -519,194 +508,138 @@ async def ask_orlem(user_message: str) -> Optional[str]:
     if is_okr(low):             return await gen_okr(msg)
     if is_training(low):        return await gen_training(msg)
 
-    # 6.8 Tom: manual > auto > neutro
     if _MEETING_TONE == "auto":
         tone = _detect_tone_auto(user_message)
     else:
         tone = _MEETING_TONE
 
-    # 6.9 Modo conversa (sócio na call)
     return await answer_like_partner(msg, tone)
-# brain.py
-from openai import OpenAI
-client = OpenAI()
-
-ANSWER_STYLE = """
-Você é o Orlem, um assistente de reunião que responde como um sócio experiente.
-PRINCÍPIOS (sempre):
-1) Responda primeiro de forma objetiva e aplicável ao caso descrito, sem pedir listas de detalhes.
-2) Se faltar uma informação crítica, ASSUMA de forma razoável e MARQUE com ⚑ o ponto assumido (ex.: ⚑ prazo: 7 dias).
-3) No máximo 1 (uma) pergunta curta no final para destravar a ação. Nunca uma bateria de perguntas.
-4) Dê próximos passos acionáveis (bullet curto), com responsável genérico se não houver nome (ex.: “dono da tarefa”).
-5) Nunca diga “preciso de mais detalhes para responder”. Prefira: “vou sugerir um plano base e você ajusta”.
-6) Mantenha tom direto, profissional e curto; evite florear. Não repita o que o usuário já disse.
-"""
-
-def _build_messages(user_text: str):
-    return [
-        {"role": "system", "content": ANSWER_STYLE},
-        {"role": "user", "content": user_text},
-    ]
-
-async def ask_orlem(user_text: str) -> str:
-    try:
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=_build_messages(user_text),
-            temperature=0.4,             # mais decisivo
-            max_tokens=600,
-        )
-        return resp.choices[0].message.content.strip()
-    except Exception as e:
-        # fallback seco, mas nunca pedindo "mais detalhes"
-        return ("Vou propor um plano base para avançar e podemos ajustar em seguida. "
-                f"(Erro interno: {e})")
 
 
 # ---------------------------------------------------------
-# 7. Funções auxiliares chamadas pelo app.py (inalteradas)
+# 7. Funções auxiliares usadas pelo app.py
 # ---------------------------------------------------------
 async def summarize_transcript(transcript: str) -> str:
     """
-    Gera um resumo assertivo + decisões + próximos passos, mesmo se o log estiver incompleto.
-    Nunca pede mais informações.
+    Gera um resumo no formato:
+    Resumo rápido / Decisões / Próximos passos
     """
     if not transcript or not transcript.strip():
-        return "Sem conteúdo na reunião para resumir."
-
-    from openai import OpenAI
-    client = OpenAI()
-
-    prompt = f"""
-Você é um assistente de reuniões. Receberá um LOG CRU de falas (podem existir 'user:', 'orlem:' ou nomes).
-Sua tarefa é produzir um resumo objetivo e acionável, independente do tema (marketing, jurídico, engenharia, etc).
-
-Regras de estilo (obrigatórias):
-- Responda no formato pedido, direto ao ponto, sem perguntas.
-- Se detalhes faltarem, use inferência conservadora e linguagem neutra. Não invente fatos.
-- Sinalize inferências com “(inferido)”.
-- Português claro, bullets curtos, verbos no imperativo para ações.
-
-FORMATO DE SAÍDA (texto):
-Resumo rápido:
-- ...
-- ...
-
-Decisões:
-- ... (se não houver, escreva “Nenhuma decisão registrada.”)
-
-Próximos passos:
-- Tarefa — Responsável — Prazo (padrão 3 dias) (inferido se necessário)
-- ...
-
-LOG:
-\"\"\"{transcript}\"
-\"\"\"
-"""
-
-    try:
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.2,
-            max_tokens=650,
-            messages=[
-                {"role": "system", "content": "Você transforma transcrições em resumos úteis e acionáveis."},
-                {"role": "user", "content": prompt},
-            ],
-        )
-        text = resp.choices[0].message.content.strip()
-        # garantias mínimas de seções
-        if "Resumo rápido:" not in text:
-            text = "Resumo rápido:\n- " + text
-        if "Decisões:" not in text:
-            text += "\n\nDecisões:\n- Nenhuma decisão registrada."
-        if "Próximos passos:" not in text:
-            text += "\n\nPróximos passos:\n- Definir próximos passos — Responsável (a definir) — Prazo 3 dias (inferido)."
-        return text
-    except Exception as e:
-        lines = [ln.strip() for ln in transcript.splitlines() if ln.strip()]
-        preview = lines[:6]
-        bul = "\n".join(f"- {ln[:140]}" for ln in preview) or "- (sem conteúdo)"
         return (
             "Resumo rápido:\n"
-            f"{bul}\n\nDecisões:\n- Não identificadas.\n\n"
-            "Próximos passos:\n- Consolidar pauta — Responsável (a definir) — Prazo 3 dias (inferido).\n"
-            f"(fallback resumido; detalhe técnico: {type(e).__name__})"
+            "- Ainda não há conteúdo suficiente na reunião para gerar um resumo.\n\n"
+            "Decisões:\n"
+            "- Nenhuma decisão registrada.\n\n"
+            "Próximos passos:\n"
+            "- Definir próximos passos — Responsável (a definir) — Prazo 3 dias (inferido)."
         )
+
+    text = await gen_summary(transcript)
+
+    if "Resumo rápido:" not in text:
+        text = "Resumo rápido:\n- " + text
+
+    if "Decisões:" not in text:
+        text += "\n\nDecisões:\n- Nenhuma decisão registrada."
+
+    if "Próximos passos:" not in text:
+        text += (
+            "\n\nPróximos passos:\n"
+            "- Definir próximos passos — Responsável (a definir) — Prazo 3 dias (inferido)."
+        )
+
+    return text
 
 
 async def extract_decisions(transcript: str) -> str:
     return await gen_decisions(transcript)
 
+
 async def extract_actions(transcript: str) -> str:
     return await gen_actions(transcript)
 
-# compat com app.py antigo
+
 async def client_status_message(contexto: str) -> str:
     return await gen_client_message(contexto)
 
 
 # ---------------------------------------------------------
-# 8. Diarização (placeholder)
+# 8. Diarização (organizar por falante)
 # ---------------------------------------------------------
 async def diarize_transcript(transcript: str) -> str:
     """
-    Agrupa a conversa por falante de forma legível, sem exigir diarização perfeita.
-    Se nomes não forem claros, usa Falante A/B/C. Não faz perguntas.
+    Agrupa a conversa por falante de forma legível.
+    Nunca faz perguntas, só entrega um mapa de quem falou o quê.
     """
     if not transcript or not transcript.strip():
-        return "Diarização indisponível: sem conteúdo."
-
-    from openai import OpenAI
-    client = OpenAI()
+        return "Diarização indisponível: não há falas suficientes na reunião."
 
     prompt = f"""
-Você vai organizar o LOG por falante. Identifique nomes quando explícitos (ex.: “Felipe: …”, “Ana: …”).
-Se não houver nomes claros, use Falante A, Falante B, Falante C na ordem em que aparecem.
-Agrupe falas em bullets curtos, condensando repetições.
+Você vai receber o LOG cru de uma reunião, com fal falas de várias pessoas.
+Algumas linhas podem ter prefixos como "User:", "Orlem:", nomes de pessoas, etc.
 
-Regras de estilo (obrigatórias):
-- Responda direto, sem pedir contexto.
-- Se nomes forem desconhecidos, use Falante A/B/C.
-- Não adicione conteúdo inexistente.
+Sua missão é ORGANIZAR esse material por falante de forma simples e útil,
+como se fosse um mapa rápido da reunião.
 
-FORMATO DE SAÍDA (texto):
-Falante/Nome X:
+REGRAS OBRIGATÓRIAS:
+- Se tiver nomes claros (ex.: "Felipe:", "Ana:"), use esses nomes nos títulos.
+- Se não tiver nomes claros, use rótulos neutros: Falante A, Falante B, Falante C...
+  na ordem em que aparecem.
+- Agrupe as fal falas de cada pessoa em bullets curtos, sem repetir tudo palavra por palavra.
+- NÃO faça perguntas, NÃO diga que precisa de mais contexto.
+- NÃO invente conteúdo novo; apenas compacte o que estiver no log.
+- Não use saudação; comece direto.
+
+FORMATO EXATO DE SAÍDA (exemplo de estrutura):
+
+Falante / Nome X:
 - ponto 1
 - ponto 2
 
-Falante/Nome Y:
+Falante / Nome Y:
 - ponto 1
 - ponto 2
 
-LOG:
-\"\"\"{transcript}\"
-\"\"\"
-"""
+LOG DA REUNIÃO (cru):
+\"\"\"{transcript}\"\"\""""
 
     try:
         resp = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=MODEL_NAME,
             temperature=0.2,
             max_tokens=700,
             messages=[
-                {"role": "system", "content": "Você realiza diarização legível e confiável a partir de logs imperfeitos."},
+                {
+                    "role": "system",
+                    "content": (
+                        "Você organiza transcrições de reunião por falante, de forma clara, "
+                        "sem pedir contexto extra e sem inventar conteúdo."
+                    ),
+                },
                 {"role": "user", "content": prompt},
             ],
         )
-        text = resp.choices[0].message.content.strip()
+        text = (resp.choices[0].message.content or "").strip()
+
         if "Falante" not in text and ":" not in text:
             text = "Falante A:\n- " + text
+
         return text
+
     except Exception as e:
-        a, b = [], []
+        user_lines, orlem_lines = [], []
         for ln in transcript.splitlines():
             low = ln.lower()
             if low.startswith("user:"):
-                a.append(ln.split(":", 1)[1].strip())
+                user_lines.append(ln.split(":", 1)[1].strip())
             elif low.startswith("orlem:"):
-                b.append(ln.split(":", 1)[1].strip())
-        out = "Falante A:\n" + "\n".join(f"- {x[:140]}" for x in a[:6] or ["(sem falas)"])
-        out += "\n\nFalante B:\n" + "\n".join(f"- {x[:140]}" for x in b[:6] or ["(sem falas)"])
-        out += f"\n\n(observação: fallback simples; detalhe técnico: {type(e).__name__})"
+                orlem_lines.append(ln.split(":", 1)[1].strip())
+
+        out = "Falante / Nome A (usuário):\n" + "\n".join(
+            f"- {x[:140]}" for x in (user_lines[:6] or ["(sem fal falas)"])
+        )
+        out += "\n\nFalante / Nome B (Orlem):\n" + "\n".join(
+            f"- {x[:140]}" for x in (orlem_lines[:6] or ["(sem fal falas)"])
+        )
+        out += f"\n\n(observação: diarização simplificada por erro técnico: {type(e).__name__})"
         return out
