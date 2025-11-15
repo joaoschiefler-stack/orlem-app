@@ -38,6 +38,18 @@
   let mediaRecorder = null;
   let recordedChunks = [];
 
+  // === controles visuais / verbosidade (NOVO) ===
+  const VERBOSE_SYSTEM = false; // defina true para ver mensagens de sistema no chat (debug)
+  function sys(msg) { if (VERBOSE_SYSTEM) addChatMessage("system", msg); }
+
+  function setMicState(state) {
+    // state: "idle" | "recording" | "transcribing" | "error"
+    if (!btnMic) return;
+    btnMic.classList.remove("recording");
+    btnMic.dataset.state = state;
+    if (state === "recording") btnMic.classList.add("recording");
+  }
+
   // ----------------- utilidades básicas -----------------
   function loadOrCreateSessionId() {
     const key = "orlem_session_id";
@@ -65,8 +77,7 @@
       }
     } else {
       wsStatusText.textContent = "Desconectado — tentando reconectar…";
-      connectionStatus.textContent =
-        "Se isso ficar travado, recarrega a página.";
+      connectionStatus.textContent = VERBOSE_SYSTEM ? "Se isso ficar travado, recarrega a página." : "";
       if (sessionDot) {
         sessionDot.style.background = "#f97316";
         sessionDot.style.boxShadow = "0 0 8px rgba(249,115,22,0.6)";
@@ -141,12 +152,84 @@
   function routeToPanels(type, text) {
     if (!text) return;
 
+    // 1) Se for um resumo no formato:
+    // "Resumo rápido:\n...\n\nDecisões:\n...\n\nPróximos passos:\n..."
+    if (type === "summary") {
+      const raw = text || "";
+
+      const idxResumo = raw.indexOf("Resumo rápido:");
+      const idxDec = raw.indexOf("Decisões:");
+      const idxNext = raw.indexOf("Próximos passos:");
+
+      let resumo = "";
+      let decisoes = "";
+      let proximos = "";
+
+      if (idxResumo !== -1) {
+        if (idxDec !== -1) {
+          resumo = raw.slice(idxResumo + "Resumo rápido:".length, idxDec).trim();
+        } else {
+          resumo = raw.slice(idxResumo + "Resumo rápido:".length).trim();
+        }
+      }
+
+      if (idxDec !== -1) {
+        if (idxNext !== -1) {
+          decisoes = raw.slice(idxDec + "Decisões:".length, idxNext).trim();
+        } else {
+          decisoes = raw.slice(idxDec + "Decisões:".length).trim();
+        }
+      }
+
+      if (idxNext !== -1) {
+        proximos = raw.slice(idxNext + "Próximos passos:".length).trim();
+      }
+
+      // joga cada linha (- ...) pro painel certo
+      if (resumo) {
+        resumo
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => l)
+          .forEach((l) => {
+            const clean = l.replace(/^-+\s*/, "");
+            addPanelItem(summaryItems, summaryEmpty, summaryCount, clean);
+          });
+      }
+
+      if (decisoes) {
+        decisoes
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => l)
+          .forEach((l) => {
+            const clean = l.replace(/^-+\s*/, "");
+            addPanelItem(decisionsItems, decisionsEmpty, decisionsCount, clean);
+          });
+      }
+
+      if (proximos) {
+        proximos
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => l)
+          .forEach((l) => {
+            const clean = l.replace(/^-+\s*/, "");
+            addPanelItem(actionsItems, actionsEmpty, actionsCount, clean);
+          });
+      }
+
+      return;
+    }
+
+    // 2) Resumo vindo em formato antigo [RESUMO]...
     if (type === "summary" || text.startsWith("[RESUMO]")) {
       const clean = text.replace(/^\[RESUMO\]\s*/i, "");
       addPanelItem(summaryItems, summaryEmpty, summaryCount, clean);
       return;
     }
 
+    // 3) Diarização
     if (
       type === "diarize" ||
       text.startsWith("[DIARIZAÇÃO]") ||
@@ -159,6 +242,7 @@
       return;
     }
 
+    // 4) Heurísticas pra decisões / tarefas em respostas normais
     const low = text.toLowerCase();
     if (
       low.includes("responsável") ||
@@ -252,11 +336,11 @@
           break;
 
         case "info":
-          if (answer) addChatMessage("system", answer);
+          if (answer) sys(answer); // oculto por padrão
           break;
 
         case "warn":
-          if (answer) addChatMessage("system", answer);
+          if (answer) sys(answer); // oculto por padrão
           break;
 
         case "answer":
@@ -282,7 +366,8 @@
           break;
 
         default:
-          console.log("Tipo desconhecido:", payload);
+          // silencioso
+          break;
       }
     });
 
@@ -305,10 +390,7 @@
 
   function sendPayload(payload) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      addChatMessage(
-        "system",
-        "Ainda não estou conectado. Tenta de novo em alguns segundos."
-      );
+      sys("Ainda não estou conectado. Tenta de novo em alguns segundos.");
       return;
     }
     try {
@@ -336,7 +418,7 @@
   }
 
   function handleSummarize() {
-    addChatMessage("system", "↺ Pedindo um resumo rápido para o Orlem…");
+    sys("↺ Pedindo um resumo rápido para o Orlem…");
     sendPayload({
       action: "summarize",
       session_id: sessionId,
@@ -344,7 +426,7 @@
   }
 
   function handleDiarize() {
-    addChatMessage("system", "👥 Pedindo diarização (por falante) para o Orlem…");
+    sys("👥 Pedindo diarização (por falante) para o Orlem…");
     sendPayload({
       action: "diarize",
       session_id: sessionId,
@@ -352,10 +434,7 @@
   }
 
   function handleEnd() {
-    addChatMessage(
-      "system",
-      "🛑 Encerrando reunião — o Orlem vai gerar um resumo final."
-    );
+    sys("🛑 Encerrando reunião — o Orlem vai gerar um resumo final.");
     sendPayload({
       action: "end",
       session_id: sessionId,
@@ -369,9 +448,7 @@
     // se não está gravando, começa
     if (!mediaRecorder || mediaRecorder.state === "inactive") {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
         recordedChunks = [];
 
@@ -386,16 +463,12 @@
           if (!blob.size) {
             addChatMessage(
               "system",
-              "Não capturei áudio nenhum. Tenta de novo, por favor."
+              "Não veio áudio nenhum. Tenta de novo, mais perto do microfone."
             );
             return;
           }
 
-          addChatMessage(
-            "system",
-            "Parando gravação, transcrevendo o áudio…"
-          );
-
+          // aqui a gente fica quieto no chat, só manda pro backend transcrever
           const form = new FormData();
           form.append("file", blob, "audio.webm");
 
@@ -426,30 +499,26 @@
             } else {
               addChatMessage(
                 "system",
-                "Erro ao transcrever o áudio. Tenta novamente."
+                "Não consegui entender o áudio. Pode tentar de novo?"
               );
             }
           } catch (err) {
             console.error("Erro no /stt:", err);
             addChatMessage(
               "system",
-              "Erro ao transcrever o áudio. Tenta novamente."
+              "Rolou um erro técnico na transcrição. Tenta novamente em alguns segundos."
             );
           }
         };
 
+
         mediaRecorder.start();
         btnMic.classList.add("recording");
-        addChatMessage(
-          "system",
-          "Gravando… Clique de novo no microfone para parar."
-        );
-      } catch (err) {
+        // não precisamos spammar o chat, o botão vermelho já mostra que está gravando
+
         console.error("Erro ao acessar microfone:", err);
-        addChatMessage(
-          "system",
-          "Não consegui acessar o microfone. Confere as permissões do navegador."
-        );
+        setMicState("error");
+        sys("Não consegui acessar o microfone. Confere as permissões do navegador.");
       }
     } else if (mediaRecorder.state === "recording") {
       mediaRecorder.stop();

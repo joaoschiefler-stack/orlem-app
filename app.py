@@ -441,24 +441,36 @@ async def speak_endpoint(payload: dict):
 # =========================================
 # STT / TRANSCRIÇÃO DO ÁUDIO
 # =========================================
-
+import tempfile
 
 @app.post("/stt")
 async def stt_endpoint(file: UploadFile = File(...)):
     """
-    Recebe áudio (webm/ogg) e devolve o texto transcrito.
+    Recebe áudio do browser (normalmente .webm / .ogg) e devolve o texto transcrito.
+    Mantém tudo igual no front: continua postando em /stt com FormData.
     """
     audio_bytes = await file.read()
     if not audio_bytes:
         return {"error": "Arquivo de áudio vazio."}
 
+    # 1) Escreve o blob em disco (forma mais estável para a SDK)
+    suffix = ".webm" if (file.filename or "").lower().endswith(".webm") else ".ogg"
     try:
-        result = client.audio.transcriptions.create(
-            model="whisper-1",  # pode trocar pelo modelo de STT que preferir
-            file=("audio.webm", audio_bytes, file.content_type or "audio/webm"),
-        )
-        text = getattr(result, "text", "") or ""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(audio_bytes)
+            tmp_path = tmp.name
+
+        # 2) Envia o arquivo para o Whisper-1
+        with open(tmp_path, "rb") as audio_file:
+            result = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,           # file-like real ⇒ evita falhas de mimetype
+                response_format="json",
+            )
+
+        text = (getattr(result, "text", "") or "").strip()
         return {"text": text}
+
     except Exception as e:
         print("ERRO /stt:", e)
         return {"error": str(e)}

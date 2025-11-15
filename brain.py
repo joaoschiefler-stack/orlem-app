@@ -527,13 +527,113 @@ async def ask_orlem(user_message: str) -> Optional[str]:
 
     # 6.9 Modo conversa (sócio na call)
     return await answer_like_partner(msg, tone)
+# brain.py
+from openai import OpenAI
+client = OpenAI()
+
+ANSWER_STYLE = """
+Você é o Orlem, um assistente de reunião que responde como um sócio experiente.
+PRINCÍPIOS (sempre):
+1) Responda primeiro de forma objetiva e aplicável ao caso descrito, sem pedir listas de detalhes.
+2) Se faltar uma informação crítica, ASSUMA de forma razoável e MARQUE com ⚑ o ponto assumido (ex.: ⚑ prazo: 7 dias).
+3) No máximo 1 (uma) pergunta curta no final para destravar a ação. Nunca uma bateria de perguntas.
+4) Dê próximos passos acionáveis (bullet curto), com responsável genérico se não houver nome (ex.: “dono da tarefa”).
+5) Nunca diga “preciso de mais detalhes para responder”. Prefira: “vou sugerir um plano base e você ajusta”.
+6) Mantenha tom direto, profissional e curto; evite florear. Não repita o que o usuário já disse.
+"""
+
+def _build_messages(user_text: str):
+    return [
+        {"role": "system", "content": ANSWER_STYLE},
+        {"role": "user", "content": user_text},
+    ]
+
+async def ask_orlem(user_text: str) -> str:
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=_build_messages(user_text),
+            temperature=0.4,             # mais decisivo
+            max_tokens=600,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        # fallback seco, mas nunca pedindo "mais detalhes"
+        return ("Vou propor um plano base para avançar e podemos ajustar em seguida. "
+                f"(Erro interno: {e})")
 
 
 # ---------------------------------------------------------
 # 7. Funções auxiliares chamadas pelo app.py (inalteradas)
 # ---------------------------------------------------------
 async def summarize_transcript(transcript: str) -> str:
-    return await gen_summary(transcript)
+    """
+    Gera um resumo assertivo + decisões + próximos passos, mesmo se o log estiver incompleto.
+    Nunca pede mais informações.
+    """
+    if not transcript or not transcript.strip():
+        return "Sem conteúdo na reunião para resumir."
+
+    from openai import OpenAI
+    client = OpenAI()
+
+    prompt = f"""
+Você é um assistente de reuniões. Receberá um LOG CRU de falas (podem existir 'user:', 'orlem:' ou nomes).
+Sua tarefa é produzir um resumo objetivo e acionável, independente do tema (marketing, jurídico, engenharia, etc).
+
+Regras de estilo (obrigatórias):
+- Responda no formato pedido, direto ao ponto, sem perguntas.
+- Se detalhes faltarem, use inferência conservadora e linguagem neutra. Não invente fatos.
+- Sinalize inferências com “(inferido)”.
+- Português claro, bullets curtos, verbos no imperativo para ações.
+
+FORMATO DE SAÍDA (texto):
+Resumo rápido:
+- ...
+- ...
+
+Decisões:
+- ... (se não houver, escreva “Nenhuma decisão registrada.”)
+
+Próximos passos:
+- Tarefa — Responsável — Prazo (padrão 3 dias) (inferido se necessário)
+- ...
+
+LOG:
+\"\"\"{transcript}\"
+\"\"\"
+"""
+
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.2,
+            max_tokens=650,
+            messages=[
+                {"role": "system", "content": "Você transforma transcrições em resumos úteis e acionáveis."},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        text = resp.choices[0].message.content.strip()
+        # garantias mínimas de seções
+        if "Resumo rápido:" not in text:
+            text = "Resumo rápido:\n- " + text
+        if "Decisões:" not in text:
+            text += "\n\nDecisões:\n- Nenhuma decisão registrada."
+        if "Próximos passos:" not in text:
+            text += "\n\nPróximos passos:\n- Definir próximos passos — Responsável (a definir) — Prazo 3 dias (inferido)."
+        return text
+    except Exception as e:
+        lines = [ln.strip() for ln in transcript.splitlines() if ln.strip()]
+        preview = lines[:6]
+        bul = "\n".join(f"- {ln[:140]}" for ln in preview) or "- (sem conteúdo)"
+        return (
+            "Resumo rápido:\n"
+            f"{bul}\n\nDecisões:\n- Não identificadas.\n\n"
+            "Próximos passos:\n- Consolidar pauta — Responsável (a definir) — Prazo 3 dias (inferido).\n"
+            f"(fallback resumido; detalhe técnico: {type(e).__name__})"
+        )
+
 
 async def extract_decisions(transcript: str) -> str:
     return await gen_decisions(transcript)
@@ -550,4 +650,63 @@ async def client_status_message(contexto: str) -> str:
 # 8. Diarização (placeholder)
 # ---------------------------------------------------------
 async def diarize_transcript(transcript: str) -> str:
-    return "Diarização por falante ainda não implementada nesta fase."
+    """
+    Agrupa a conversa por falante de forma legível, sem exigir diarização perfeita.
+    Se nomes não forem claros, usa Falante A/B/C. Não faz perguntas.
+    """
+    if not transcript or not transcript.strip():
+        return "Diarização indisponível: sem conteúdo."
+
+    from openai import OpenAI
+    client = OpenAI()
+
+    prompt = f"""
+Você vai organizar o LOG por falante. Identifique nomes quando explícitos (ex.: “Felipe: …”, “Ana: …”).
+Se não houver nomes claros, use Falante A, Falante B, Falante C na ordem em que aparecem.
+Agrupe falas em bullets curtos, condensando repetições.
+
+Regras de estilo (obrigatórias):
+- Responda direto, sem pedir contexto.
+- Se nomes forem desconhecidos, use Falante A/B/C.
+- Não adicione conteúdo inexistente.
+
+FORMATO DE SAÍDA (texto):
+Falante/Nome X:
+- ponto 1
+- ponto 2
+
+Falante/Nome Y:
+- ponto 1
+- ponto 2
+
+LOG:
+\"\"\"{transcript}\"
+\"\"\"
+"""
+
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.2,
+            max_tokens=700,
+            messages=[
+                {"role": "system", "content": "Você realiza diarização legível e confiável a partir de logs imperfeitos."},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        text = resp.choices[0].message.content.strip()
+        if "Falante" not in text and ":" not in text:
+            text = "Falante A:\n- " + text
+        return text
+    except Exception as e:
+        a, b = [], []
+        for ln in transcript.splitlines():
+            low = ln.lower()
+            if low.startswith("user:"):
+                a.append(ln.split(":", 1)[1].strip())
+            elif low.startswith("orlem:"):
+                b.append(ln.split(":", 1)[1].strip())
+        out = "Falante A:\n" + "\n".join(f"- {x[:140]}" for x in a[:6] or ["(sem falas)"])
+        out += "\n\nFalante B:\n" + "\n".join(f"- {x[:140]}" for x in b[:6] or ["(sem falas)"])
+        out += f"\n\n(observação: fallback simples; detalhe técnico: {type(e).__name__})"
+        return out
