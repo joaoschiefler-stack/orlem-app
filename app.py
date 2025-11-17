@@ -15,6 +15,7 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware  # <-- NOVO
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -37,8 +38,18 @@ from db import (
 
 load_dotenv()
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(title="Orlem - Assistente de Reuniões com IA")
-init_db()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],      # em dev pode deixar aberto
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # cliente OpenAI único
 client = OpenAI()
@@ -123,13 +134,7 @@ async def rename_log(payload: Dict[str, Any]):
 # API (reuniões / banco)
 # =========================================
 @app.get("/api/meetings")
-async def api_list_meetings(user_key: Optional[str] = Query(None)):
-    """
-    Lista reuniões do usuário.
-    Por enquanto TODO MUNDO ainda usa o mesmo usuário padrão do banco.
-    O parâmetro user_key já deixa a rota preparada para, no futuro,
-    mapearmos isso para um usuário real (login do SaaS).
-    """
+async def api_list_meetings():
     user_id = get_or_create_default_user()
     meetings = list_meetings(user_id)
     return {"meetings": meetings}
@@ -142,16 +147,10 @@ async def api_get_meeting(meeting_id: int):
 
 
 @app.get("/api/meeting/open")
-async def api_meeting_open(
-    session_id: str = Query(...),
-    user_key: Optional[str] = Query(None),
-):
+async def api_meeting_open(session_id: str = Query(...)):
     """
     Retorna meeting_id existente para session_id (se já houver mensagens),
     senão None — criação passa a ser on-demand (primeira mensagem).
-
-    O parâmetro user_key já prepara o caminho para, no futuro,
-    vincular a reunião a um usuário real do SaaS.
     """
     user_id = get_or_create_default_user()
     logname = f"{session_id}.jsonl"
@@ -210,25 +209,26 @@ async def websocket_endpoint(ws: WebSocket):
 
     params = ws.query_params
     session_id: Optional[str] = params.get("session_id") or None
-    user_key: Optional[str] = params.get("user_id") or params.get("user_key")
-
     if session_id is None:
         session_id = "session-local"
 
-    # no futuro vamos usar user_key -> user_id real (multi-tenant)
     meeting_id: Optional[int] = None
     user_id = get_or_create_default_user()
 
     # manda status inicial
+       # manda status inicial
     try:
         await ws.send_text(
             json.dumps(
                 {
                     "type": "status",
-                    "session_id": session_id,
+                    "status": "connected",   # ajuda o front a trocar o badge
+                    "session_id": session_id,  # snake_case (nosso)
+                    "sessionId": session_id,   # camelCase (Lovable costuma usar isso)
                 }
             )
         )
+
     except WebSocketDisconnect:
         return
 
@@ -429,28 +429,28 @@ async def websocket_endpoint(ws: WebSocket):
 
 @app.post("/speak")
 async def speak_endpoint(payload: dict):
-  text = payload.get("text", "")
-  if not text:
-      return {"error": "Texto vazio"}
+    text = payload.get("text", "")
+    if not text:
+        return {"error": "Texto vazio"}
 
-  try:
-      speech = client.audio.speech.create(
-          model="gpt-4o-mini-tts",
-          voice="coral",
-          input=text,
-      )
-      audio_bytes = speech.read()
-      return StreamingResponse(
-          io.BytesIO(audio_bytes),
-          media_type="audio/mpeg",
-      )
-  except Exception as e:
-      print("ERRO /speak:", e)
-      return {
-          "error": "Falha na voz, continuo por texto",
-          "detail": str(e),
-          "text": text,
-      }
+    try:
+        speech = client.audio.speech.create(
+            model="gpt-4o-mini-tts",
+            voice="coral",
+            input=text,
+        )
+        audio_bytes = speech.read()
+        return StreamingResponse(
+            io.BytesIO(audio_bytes),
+            media_type="audio/mpeg",
+        )
+    except Exception as e:
+        print("ERRO /speak:", e)
+        return {
+            "error": "Falha na voz, continuo por texto",
+            "detail": str(e),
+            "text": text,
+        }
 
 
 # =========================================
@@ -458,18 +458,30 @@ async def speak_endpoint(payload: dict):
 # =========================================
 import tempfile
 
+
 @app.post("/stt")
-async def stt_endpoint(file: UploadFile = File(...)):
+async def stt_endpoint(
+    file: UploadFile = File(None),
+    audio: UploadFile = File(None),
+):
     """
     Recebe áudio do browser (normalmente .webm / .ogg) e devolve o texto transcrito.
-    Mantém tudo igual no front: continua postando em /stt com FormData.
+
+    - Suporta dois nomes de campo:
+      - `file`  → usado pelo front antigo (index.html/client.js)
+      - `audio` → usado pelo app do Lovable
     """
-    audio_bytes = await file.read()
+    upload = file or audio
+
+    if upload is None:
+        return {"error": "Arquivo de áudio vazio."}
+
+    audio_bytes = await upload.read()
     if not audio_bytes:
         return {"error": "Arquivo de áudio vazio."}
 
     # 1) Escreve o blob em disco (forma mais estável para a SDK)
-    suffix = ".webm" if (file.filename or "").lower().endswith(".webm") else ".ogg"
+    suffix = ".webm" if (upload.filename or "").lower().endswith(".webm") else ".ogg"
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(audio_bytes)
