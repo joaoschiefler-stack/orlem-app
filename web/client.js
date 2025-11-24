@@ -1,4 +1,3 @@
-// client.js
 (() => {
   let ws = null;
   let sessionId = null;
@@ -40,7 +39,9 @@
 
   // === controles visuais / verbosidade (NOVO) ===
   const VERBOSE_SYSTEM = false; // defina true para ver mensagens de sistema no chat (debug)
-  function sys(msg) { if (VERBOSE_SYSTEM) addChatMessage("system", msg); }
+  function sys(msg) {
+    if (VERBOSE_SYSTEM) addChatMessage("system", msg);
+  }
 
   function setMicState(state) {
     // state: "idle" | "recording" | "transcribing" | "error"
@@ -77,7 +78,9 @@
       }
     } else {
       wsStatusText.textContent = "Desconectado — tentando reconectar…";
-      connectionStatus.textContent = VERBOSE_SYSTEM ? "Se isso ficar travado, recarrega a página." : "";
+      connectionStatus.textContent = VERBOSE_SYSTEM
+        ? "Se isso ficar travado, recarrega a página."
+        : "";
       if (sessionDot) {
         sessionDot.style.background = "#f97316";
         sessionDot.style.boxShadow = "0 0 8px rgba(249,115,22,0.6)";
@@ -167,7 +170,9 @@
 
       if (idxResumo !== -1) {
         if (idxDec !== -1) {
-          resumo = raw.slice(idxResumo + "Resumo rápido:".length, idxDec).trim();
+          resumo = raw
+            .slice(idxResumo + "Resumo rápido:".length, idxDec)
+            .trim();
         } else {
           resumo = raw.slice(idxResumo + "Resumo rápido:".length).trim();
         }
@@ -175,14 +180,18 @@
 
       if (idxDec !== -1) {
         if (idxNext !== -1) {
-          decisoes = raw.slice(idxDec + "Decisões:".length, idxNext).trim();
+          decisoes = raw
+            .slice(idxDec + "Decisões:".length, idxNext)
+            .trim();
         } else {
           decisoes = raw.slice(idxDec + "Decisões:".length).trim();
         }
       }
 
       if (idxNext !== -1) {
-        proximos = raw.slice(idxNext + "Próximos passos:".length).trim();
+        proximos = raw
+          .slice(idxNext + "Próximos passos:".length)
+          .trim();
       }
 
       // joga cada linha (- ...) pro painel certo
@@ -402,20 +411,31 @@
 
   // ----------------- handlers de UI -----------------
   function handleSend() {
+    if (!inputEl) return;
     const text = (inputEl.value || "").trim();
     if (!text) return;
 
     addChatMessage("user", text);
 
-    const payload = {
-      text,
-      session_id: sessionId,
-    };
-    sendPayload(payload);
+    // detecta encerramento
+    if (text.toLowerCase().includes("encerrar") || text.toLowerCase() === "end") {
+        const payload = {
+            action: "end",
+            session_id: sessionId,
+        };
+        sendPayload(payload);
+    } 
+    else {
+        const payload = {
+            text,
+            session_id: sessionId,
+        };
+        sendPayload(payload);
+    }
 
     inputEl.value = "";
     inputEl.focus();
-  }
+}
 
   function handleSummarize() {
     sys("↺ Pedindo um resumo rápido para o Orlem…");
@@ -441,90 +461,154 @@
     });
   }
 
-  // ----------------- microfone / STT -----------------
-  // ----------------- microfone / STT -----------------
-async function toggleRecording() {
-  if (!btnMic) return;
+  // ---------- helper para normalizar o nome "Orlem" vindo do STT ----------
+  function normalizeOrlemName(text) {
+    if (!text) return text;
 
-  // se não está gravando, começa
-  if (!mediaRecorder || mediaRecorder.state === "inactive") {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      recordedChunks = [];
+    const low = text.toLowerCase();
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) recordedChunks.push(e.data);
-      };
-
-      mediaRecorder.onstop = async () => {
-        btnMic.classList.remove("recording");
-
-        const blob = new Blob(recordedChunks, { type: "audio/webm" });
-        if (!blob.size) {
-          addChatMessage(
-            "system",
-            "Não veio áudio nenhum. Tenta de novo, mais perto do microfone."
-          );
-          return;
-        }
-
-        const form = new FormData();
-        form.append("file", blob, "audio.webm");
-
-        try {
-          const resp = await fetch("/stt", {
-            method: "POST",
-            body: form,
-          });
-          const data = await resp.json();
-
-          if (data && data.text) {
-            const text = data.text.trim();
-            if (!text) {
-              addChatMessage(
-                "system",
-                "Não consegui entender o áudio. Tenta falar de novo, mais perto do microfone."
-              );
-              return;
-            }
-
-            addChatMessage("user", text);
-            sendPayload({
-              text,
-              session_id: sessionId,
-            });
-          } else {
-            addChatMessage(
-              "system",
-              "Não consegui entender o áudio. Pode tentar de novo?"
-            );
-          }
-        } catch (err) {
-          console.error("Erro no /stt:", err);
-          addChatMessage(
-            "system",
-            "Rolou um erro técnico na transcrição. Tenta novamente em alguns segundos."
-          );
-        }
-      };
-
-      mediaRecorder.start();
-      btnMic.classList.add("recording");
-      // se precisar, pode chamar setMicState("recording") aqui
-
-    } catch (err) {
-      console.error("Erro ao acessar microfone:", err);
-      setMicState("error");
-      sys("Não consegui acessar o microfone. Confere as permissões do navegador.");
+    // se já tiver "orlem" certinho, só padroniza a capitalização
+    if (low.includes("orlem")) {
+      return text.replace(/orlem/gi, "Orlem");
     }
 
-  } else if (mediaRecorder.state === "recording") {
-    mediaRecorder.stop();
-    // aqui poderíamos chamar setMicState("idle") se quiser
-  }
-}
+    const words = text.split(/\s+/);
 
+    const mapped = words.map((word) => {
+      const raw = word;
+      const clean = word
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "") // tira acentos
+        .replace(/[^a-z]/g, ""); // só letras
+
+      const variants = [
+        "orlem",
+        "orlen",
+        "orlan",
+        "orlim",
+        "orlin",
+        "orlem?",
+        "orlem.",
+        "orlem!",
+        "orlem,",
+        "orlem;",
+        "orlenn",
+        "orlennn",
+        "orlemn",
+        "orlemr",
+      ];
+
+      if (variants.includes(clean)) {
+        return "Orlem";
+      }
+
+      // heurística: tokens começando com "or" e tamanho 3–6 que parecem "orlem"
+      if (clean.startsWith("or") && clean.length >= 3 && clean.length <= 6) {
+        return "Orlem";
+      }
+
+      return raw;
+    });
+
+    let fixed = mapped.join(" ");
+
+    // se ainda não tiver Orlem na frase inteira, prefixa
+    if (!fixed.toLowerCase().includes("orlem")) {
+      fixed = `Orlem, ${fixed}`;
+    }
+
+    return fixed;
+  }
+
+  // ----------------- microfone / STT -----------------
+  // ----------------- microfone / STT -----------------
+  async function toggleRecording() {
+    if (!btnMic) return;
+
+    // se não está gravando, começa
+    if (!mediaRecorder || mediaRecorder.state === "inactive") {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+        mediaRecorder = new MediaRecorder(stream);
+        recordedChunks = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) recordedChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          btnMic.classList.remove("recording");
+
+          const blob = new Blob(recordedChunks, { type: "audio/webm" });
+          if (!blob.size) {
+            addChatMessage(
+              "system",
+              "Não veio áudio nenhum. Tenta de novo, mais perto do microfone."
+            );
+            return;
+          }
+
+          const form = new FormData();
+          form.append("file", blob, "audio.webm");
+
+          try {
+            const resp = await fetch("/stt", {
+              method: "POST",
+              body: form,
+            });
+            const data = await resp.json();
+
+            if (data && data.text) {
+              const rawText = (data.text || "").trim();
+              if (!rawText) {
+                addChatMessage(
+                  "system",
+                  "Não consegui entender o áudio. Tenta falar de novo, mais perto do microfone."
+                );
+                return;
+              }
+
+              // 🔧 corrige o nome Orlem e garante que ele seja chamado
+              const finalText = normalizeOrlemName(rawText);
+
+              addChatMessage("user", finalText);
+              sendPayload({
+                text: finalText,
+                session_id: sessionId,
+              });
+            } else {
+              addChatMessage(
+                "system",
+                "Não consegui entender o áudio. Pode tentar de novo?"
+              );
+            }
+          } catch (err) {
+            console.error("Erro no /stt:", err);
+            addChatMessage(
+              "system",
+              "Rolou um erro técnico na transcrição. Tenta novamente em alguns segundos."
+            );
+          }
+        };
+
+        mediaRecorder.start();
+        btnMic.classList.add("recording");
+        // se precisar, pode chamar setMicState("recording") aqui
+      } catch (err) {
+        console.error("Erro ao acessar microfone:", err);
+        setMicState("error");
+        sys(
+          "Não consegui acessar o microfone. Confere as permissões do navegador."
+        );
+      }
+    } else if (mediaRecorder.state === "recording") {
+      mediaRecorder.stop();
+      // aqui poderíamos chamar setMicState("idle") se quiser
+    }
+  }
 
   // ----------------- init -----------------
   window.addEventListener("DOMContentLoaded", () => {
@@ -553,3 +637,126 @@ async function toggleRecording() {
     );
   });
 })();
+
+// ==========================================
+// ORLEM HUB – Helpers para falar com a API
+// ==========================================
+
+async function hubApiGet(path) {
+  const res = await fetch(path);
+  if (!res.ok) {
+    console.error(`Erro HTTP em ${path}:`, res.status);
+    throw new Error(`Erro ao chamar ${path}: ${res.status}`);
+  }
+  return await res.json();
+}
+
+// Lista todos os projetos (tela "Seus Projetos")
+async function hubLoadProjects() {
+  const projects = await hubApiGet("/api/projects");
+  console.log("Projetos do Orlem Hub:", projects);
+
+  // Preenche os cards na landing
+  renderHubProjects(projects);
+  return projects;
+}
+
+// Lista reuniões de um projeto (tela interna do projeto)
+async function hubLoadProjectMeetings(projectId) {
+  const meetings = await hubApiGet(`/api/hub/projects/${projectId}/meetings`);
+  console.log(`Reuniões do projeto ${projectId}:`, meetings);
+  return meetings;
+}
+
+// Detalhes completos de uma reunião (tela de reunião)
+async function hubLoadMeetingDetails(meetingId) {
+  const meeting = await hubApiGet(`/api/hub/meetings/${meetingId}`);
+  console.log(`Detalhes da reunião ${meetingId}:`, meeting);
+  return meeting;
+}
+
+// Reprocessa resumo/decisões/ações da reunião (mock por enquanto)
+async function hubRefreshMeeting(meetingId) {
+  const res = await fetch(`/api/hub/meetings/${meetingId}/refresh`, {
+    method: "POST",
+  });
+  const data = await res.json();
+  console.log("Resumo atualizado (mock):", data);
+  return data;
+}
+
+// Deixa disponível no console do navegador:
+// OrlemHub.loadProjects(), OrlemHub.loadProjectMeetings(1), etc.
+window.OrlemHub = {
+  loadProjects: hubLoadProjects,
+  loadProjectMeetings: hubLoadProjectMeetings,
+  loadMeetingDetails: hubLoadMeetingDetails,
+  refreshMeeting: hubRefreshMeeting,
+};
+
+function renderHubProjects(projects) {
+  const listEl = document.getElementById("hub-projects-list");
+  const statusEl = document.getElementById("hub-projects-status");
+  if (!listEl) return; // se não tiver a seção, só ignora
+
+  // limpar conteúdo anterior
+  listEl.innerHTML = "";
+
+  if (!projects || projects.length === 0) {
+    listEl.innerHTML = `
+      <div class="hub-empty"
+           style="
+             border-radius:16px;
+             border:1px dashed #374151;
+             padding:16px 20px;
+             font-size:14px;
+             color:#9ca3af;
+             background:rgba(15,23,42,0.6);
+           ">
+        Nenhum projeto ainda. Quando o Orlem processar as primeiras reuniões, eles aparecem aqui.
+      </div>
+    `;
+    if (statusEl) statusEl.textContent = "0 projetos";
+    return;
+  }
+
+  projects.forEach((p) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.style.borderRadius = "16px";
+    card.style.border = "1px solid #1f2937";
+    card.style.padding = "16px 18px";
+    card.style.background = "rgba(15,23,42,0.9)";
+    card.style.color = "#e5e7eb";
+    card.style.textAlign = "left";
+    card.style.cursor = "pointer";
+    card.style.display = "flex";
+    card.style.flexDirection = "column";
+    card.style.gap = "6px";
+
+    card.innerHTML = `
+      <div style="font-size:14px; font-weight:600;">
+        ${p.name}
+      </div>
+      <div style="font-size:13px; color:#9ca3af;">
+        ${p.description || ""}
+      </div>
+      <div style="font-size:12px; color:#6b7280; margin-top:4px;">
+        ${p.meetings_count || 0} reuniões
+      </div>
+    `;
+
+    card.addEventListener("click", () => {
+      console.log("🔗 Clicou no projeto", p.id, p.name);
+      // Próximo passo: carregar reuniões desse projeto
+      // hubLoadProjectMeetings(p.id);
+    });
+
+    listEl.appendChild(card);
+  });
+
+  if (statusEl) {
+    const n = projects.length;
+    statusEl.textContent = n === 1 ? "1 projeto" : `${n} projetos`;
+  }
+}

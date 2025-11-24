@@ -2,22 +2,35 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <title>Orlem — Reunião ao vivo</title>
+    <title>Orlem — seu cofundador de IA para decisões melhores</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Fonte SaaS moderna -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
 
     <style>
       :root {
-        --bg-main: #020617;
-        --bg-elevated: #020718;
+        --bg-body: #020617;
+        --bg-section: #020617;
         --bg-card: #020617;
-        --border-subtle: rgba(148, 163, 184, 0.4);
-        --border-strong: rgba(148, 163, 184, 0.7);
-        --text-main: #e2e8f0;
-        --text-soft: #9ca3af;
-        --accent: #22c55e;
-        --accent-soft: rgba(34, 197, 94, 0.15);
-        --danger: #f97316;
-        --radius-lg: 18px;
+        --bg-hero: radial-gradient(circle at top left, #0f172a, #020617 55%);
+        --fg-main: #e5f0ff;
+        --fg-soft: #9ca3af;
+        --fg-strong: #f9fafb;
+        --accent: #3b82f6;
+        --accent-soft: #60a5fa;
+        --accent-strong: #1d4ed8;
+        --accent-green: #22c55e;
+        --border-soft: rgba(148, 163, 184, 0.35);
+        --border-subtle: rgba(148, 163, 184, 0.18);
+        --shadow-soft: 0 22px 60px rgba(15, 23, 42, 0.85);
+        --radius-card: 24px;
+        --radius-pill: 999px;
+        --nav-height: 68px;
+        --max-width: 1120px;
       }
 
       * {
@@ -28,564 +41,1143 @@
       body {
         margin: 0;
         padding: 0;
-        height: 100%;
-        background: radial-gradient(120% 160% at 10% 0%, #0b1120, #020617);
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
-          "Segoe UI", sans-serif;
-        color: var(--text-main);
+        background: var(--bg-body);
+        color: var(--fg-main);
+        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont,
+          "SF Pro Text", "Segoe UI", sans-serif;
+        -webkit-font-smoothing: antialiased;
       }
 
       body {
+        min-height: 100vh;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .page {
+        min-height: 100vh;
+        background: var(--bg-hero);
+      }
+
+      .shell {
+        max-width: var(--max-width);
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+
+      /* ================= NAV ================= */
+
+      .nav {
+        height: var(--nav-height);
         display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
       }
 
-      .app-shell {
-        width: 100%;
-        display: grid;
-        grid-template-columns: 260px minmax(0, 1fr) 360px;
-        gap: 18px;
-        padding: 14px 18px 20px;
+      .nav-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
 
-      /* ------- cards genéricos ------- */
-
-      .card {
-        background: radial-gradient(
-            circle at 0 0,
-            rgba(56, 189, 248, 0.08),
-            transparent 40%
-          ),
-          radial-gradient(
-            circle at 100% 100%,
-            rgba(129, 140, 248, 0.08),
-            transparent 45%
-          ),
-          rgba(15, 23, 42, 0.97);
-        border-radius: 22px;
-        border: 1px solid rgba(148, 163, 184, 0.18);
-        box-shadow: 0 18px 60px rgba(15, 23, 42, 0.8);
-        overflow: hidden;
+      .logo-mark {
+        width: 32px;
+        height: 32px;
+        border-radius: 999px;
+        background: radial-gradient(circle at 30% 20%, #38bdf8, #6366f1 60%);
+        box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.9),
+          0 0 24px rgba(56, 189, 248, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
         position: relative;
       }
 
-      .card-header {
-        padding: 14px 18px 6px;
-        font-size: 13px;
+      .logo-mark::after {
+        content: "";
+        position: absolute;
+        inset: 6px;
+        border-radius: inherit;
+        border: 2px solid rgba(15, 23, 42, 0.9);
+      }
+
+      .logo-text-main {
         font-weight: 600;
+        font-size: 18px;
         letter-spacing: 0.02em;
-        text-transform: uppercase;
-        color: var(--text-soft);
+      }
+
+      .logo-sub {
+        font-size: 11px;
+        color: var(--fg-soft);
+      }
+
+      .nav-links {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        gap: 20px;
+        font-size: 13px;
+        color: var(--fg-soft);
       }
 
-      .card-body {
-        padding: 10px 18px 16px;
+      .nav-links a {
+        padding: 4px 2px;
       }
 
-      .pill {
+      .nav-links a:hover {
+        color: var(--fg-main);
+      }
+
+      .nav-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .btn {
+        border-radius: var(--radius-pill);
+        font-size: 13px;
+        font-weight: 500;
+        padding: 8px 18px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--fg-main);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: all 0.15s ease-out;
+      }
+
+      .btn-ghost {
+        border-color: rgba(148, 163, 184, 0.4);
+        color: var(--fg-soft);
+      }
+
+      .btn-ghost:hover {
+        border-color: var(--accent-soft);
+        color: var(--fg-main);
+        background: rgba(15, 23, 42, 0.8);
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+        color: #eff6ff;
+        border: none;
+        box-shadow: 0 18px 45px rgba(37, 99, 235, 0.6);
+      }
+
+      .btn-primary:hover {
+        filter: brightness(1.05);
+        transform: translateY(-0.5px);
+        box-shadow: 0 20px 50px rgba(37, 99, 235, 0.8);
+      }
+
+      /* ================= HERO ================= */
+
+      .hero {
+        padding: 32px 0 72px;
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.95fr);
+        gap: 40px;
+        align-items: center;
+      }
+
+      .pill-badge {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        font-size: 12px;
-        padding: 5px 10px;
-        border-radius: 999px;
-        border: 1px solid rgba(148, 163, 184, 0.45);
+        border-radius: var(--radius-pill);
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        padding: 5px 12px;
+        font-size: 11px;
+        color: var(--fg-soft);
         background: linear-gradient(
-          120deg,
-          rgba(15, 23, 42, 0.9),
-          rgba(15, 23, 42, 0.4)
+          135deg,
+          rgba(15, 23, 42, 0.92),
+          rgba(15, 23, 42, 0.6)
         );
+        margin-bottom: 16px;
       }
 
-      .pill-dot {
+      .pill-dot-live {
         width: 8px;
         height: 8px;
         border-radius: 999px;
-        background: var(--accent);
-        box-shadow: 0 0 12px rgba(34, 197, 94, 0.9);
+        background: var(--accent-green);
+        box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.28);
       }
 
-      /* ------- coluna da esquerda ------- */
+      .hero-title {
+        font-size: clamp(34px, 5vw, 44px);
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+        font-weight: 800;
+        color: var(--fg-strong);
+        margin-bottom: 16px;
+      }
 
-      .sidebar-col {
+      .hero-title span.accent {
+        color: var(--accent-soft);
+      }
+
+      .hero-subtitle {
+        font-size: 15px;
+        line-height: 1.6;
+        color: var(--fg-soft);
+        max-width: 460px;
+        margin-bottom: 24px;
+      }
+
+      .hero-ctas {
         display: flex;
-        flex-direction: column;
+        flex-wrap: wrap;
         gap: 12px;
+        margin-bottom: 18px;
       }
 
-      .sidebar-card {
-        padding-bottom: 10px;
-      }
-
-      .sidebar-title {
-        font-size: 13px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--text-soft);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-      }
-
-      .sidebar-btn {
-        font-size: 11px;
-        padding: 4px 10px;
-        border-radius: 999px;
-        border: 1px solid rgba(148, 163, 184, 0.45);
-        background: rgba(15, 23, 42, 0.7);
-        color: var(--text-soft);
-        cursor: pointer;
-      }
-
-      .sidebar-btn:hover {
-        border-color: var(--accent);
-        color: var(--accent);
-      }
-
-      .sidebar-list {
-        margin-top: 10px;
-        max-height: 260px;
-        overflow-y: auto;
+      .hero-meta {
         font-size: 12px;
-        padding-right: 6px;
+        color: var(--fg-soft);
       }
 
-      .sidebar-item {
-        padding: 6px 8px;
-        border-radius: 10px;
-        border: 1px solid transparent;
-        cursor: pointer;
-        color: var(--text-soft);
-      }
-
-      .sidebar-item:hover {
-        border-color: rgba(148, 163, 184, 0.5);
-        background: rgba(15, 23, 42, 0.9);
-        color: var(--text-main);
-      }
-
-      /* ------- coluna central ------- */
-
-      .center-col {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-
-      .top-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        padding: 7px 4px 4px;
-      }
-
-      .session-label {
-        font-size: 13px;
-        color: var(--text-soft);
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-
-      #session-dot {
-        width: 9px;
-        height: 9px;
-        border-radius: 999px;
-        background: var(--accent);
-        box-shadow: 0 0 12px rgba(34, 197, 94, 0.9);
-      }
-
-      #ws-status-text {
-        font-size: 12px;
-        color: var(--text-soft);
-      }
-
-      .top-actions {
-        display: flex;
-        gap: 8px;
-      }
-
-      .chip-btn {
-        border-radius: 999px;
-        padding: 7px 13px;
-        font-size: 12px;
-        border: 1px solid rgba(148, 163, 184, 0.5);
-        background: rgba(15, 23, 42, 0.9);
-        color: var(--text-soft);
-        cursor: pointer;
+      .hero-meta span {
         display: inline-flex;
         align-items: center;
         gap: 6px;
       }
 
-      .chip-btn.primary {
-        border-color: rgba(56, 189, 248, 0.8);
-        background: radial-gradient(
-          circle at 0 0,
-          rgba(56, 189, 248, 0.2),
-          rgba(15, 23, 42, 0.9)
-        );
-        color: #e0f2fe;
+      .hero-meta-dot {
+        width: 4px;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.7);
+        margin: 0 6px;
       }
 
-      .chip-btn.danger {
-        border-color: rgba(248, 113, 113, 0.8);
-        color: #fecaca;
-      }
+      /* === Hero card === */
 
-      .chip-btn:hover {
-        transform: translateY(-0.5px);
-        box-shadow: 0 0 18px rgba(15, 23, 42, 0.9);
-      }
-
-      .chat-card {
-        flex: 1;
+      .hero-card-shell {
         display: flex;
-        flex-direction: column;
-        padding-top: 4px;
+        justify-content: flex-end;
       }
 
-      .chat-messages {
-        flex: 1;
-        padding: 10px 18px 14px;
-        overflow-y: auto;
+      .hero-card {
+        width: 100%;
+        max-width: 460px;
+        border-radius: 24px;
+        padding: 16px 18px 16px;
+        background: radial-gradient(
+            circle at 0 0,
+            rgba(59, 130, 246, 0.2),
+            transparent 50%
+          ),
+          radial-gradient(
+            circle at 100% 100%,
+            rgba(16, 185, 129, 0.18),
+            transparent 55%
+          ),
+          linear-gradient(135deg, #020617, #020617);
+        border: 1px solid rgba(148, 163, 184, 0.45);
+        box-shadow: var(--shadow-soft);
+        position: relative;
+        overflow: hidden;
       }
 
-      .message {
+      .hero-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11px;
+        color: var(--fg-soft);
         margin-bottom: 10px;
-        max-width: 80%;
       }
 
-      .message.system {
+      .hero-card-badge-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .chip {
+        border-radius: var(--radius-pill);
+        border: 1px solid rgba(148, 163, 184, 0.5);
+        padding: 4px 9px;
+        font-size: 11px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--fg-soft);
+        background: rgba(15, 23, 42, 0.94);
+      }
+
+      .chip.green {
+        border-color: rgba(34, 197, 94, 0.85);
+        color: #bbf7d0;
+        background: rgba(5, 46, 22, 0.95);
+      }
+
+      .chip.orange {
+        border-color: rgba(249, 115, 22, 0.9);
+        color: #fed7aa;
+        background: rgba(67, 20, 7, 0.96);
+      }
+
+      .hero-card-body-title {
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 4px;
+        color: var(--fg-strong);
+      }
+
+      .hero-card-body-text {
+        font-size: 12px;
+        line-height: 1.6;
+        color: var(--fg-soft);
+        margin-bottom: 10px;
+      }
+
+      .hero-card-footer {
+        font-size: 11px;
+        color: var(--fg-soft);
+        border-top: 1px solid rgba(148, 163, 184, 0.45);
+        padding-top: 8px;
+        margin-top: 6px;
+      }
+
+      .hero-card-footer a {
+        color: var(--accent-soft);
+      }
+
+      /* ================= SEÇÕES GERAIS ================= */
+
+      section {
+        padding: 40px 0;
+      }
+
+      .section-title {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 8px;
+        color: var(--fg-strong);
+      }
+
+      .section-subtitle {
+        font-size: 14px;
+        color: var(--fg-soft);
+        margin-bottom: 24px;
+        max-width: 640px;
+      }
+
+      /* === Logos / chips “empresas que confiam” === */
+
+      .trust-row {
+        padding-top: 8px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        font-size: 12px;
+      }
+
+      .trust-label {
+        color: var(--fg-soft);
+        margin-right: 6px;
+        width: 100%;
         max-width: 100%;
       }
 
+      .trust-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .trust-pill {
+        padding: 4px 9px;
+        border-radius: var(--radius-pill);
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        font-size: 11px;
+        color: var(--fg-soft);
+        background: rgba(15, 23, 42, 0.85);
+      }
+
+      /* === Como funciona cards === */
+
+      .grid-4 {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .feature-card {
+        border-radius: var(--radius-card);
+        padding: 14px 14px 16px;
+        background: linear-gradient(
+          145deg,
+          rgba(15, 23, 42, 0.97),
+          rgba(15, 23, 42, 0.9)
+        );
+        border: 1px solid var(--border-subtle);
+      }
+
+      .feature-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 12px;
+        background: radial-gradient(circle at 30% 20%, #38bdf8, #6366f1 70%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        margin-bottom: 10px;
+      }
+
+      .feature-title {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 6px;
+        color: var(--fg-strong);
+      }
+
+      .feature-text {
+        font-size: 12px;
+        color: var(--fg-soft);
+        line-height: 1.6;
+      }
+
+      /* === Dashboard Section === */
+
+      .dashboard-section {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+        gap: 32px;
+        align-items: center;
+      }
+
+      .dash-card {
+        border-radius: 24px;
+        padding: 16px 16px 14px;
+        background: radial-gradient(
+            circle at 0 0,
+            rgba(59, 130, 246, 0.22),
+            transparent 45%
+          ),
+          radial-gradient(
+            circle at 100% 100%,
+            rgba(45, 212, 191, 0.22),
+            transparent 55%
+          ),
+          #020617;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .dash-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 11px;
+        color: var(--fg-soft);
+        margin-bottom: 10px;
+      }
+
+      .dash-title {
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 4px;
+        color: var(--fg-strong);
+      }
+
+      .dash-subtext {
+        font-size: 12px;
+        color: var(--fg-soft);
+        margin-bottom: 8px;
+      }
+
+      .dash-stats-row {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+
+      .dash-stat {
+        flex: 1;
+        border-radius: 16px;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        padding: 6px 9px;
+        font-size: 11px;
+        color: var(--fg-soft);
+      }
+
+      .dash-stat strong {
+        display: block;
+        color: var(--fg-strong);
+        font-size: 13px;
+      }
+
+      .dash-footer {
+        font-size: 11px;
+        color: var(--fg-soft);
+        border-top: 1px solid rgba(148, 163, 184, 0.4);
+        margin-top: 8px;
+        padding-top: 8px;
+      }
+
+      /* === Integrações === */
+
+      .integrations-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .integration-card {
+        border-radius: var(--radius-card);
+        padding: 14px 14px 14px;
+        background: rgba(15, 23, 42, 0.96);
+        border: 1px dashed rgba(148, 163, 184, 0.5);
+      }
+
+      .integration-name {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .integration-tag {
+        font-size: 11px;
+        border-radius: var(--radius-pill);
+        border: 1px solid rgba(148, 163, 184, 0.5);
+        padding: 2px 8px;
+        color: var(--fg-soft);
+      }
+
+      .integration-text {
+        font-size: 12px;
+        color: var(--fg-soft);
+      }
+
+      /* === CTA FINAL === */
+
+      .cta-final {
+        text-align: center;
+        padding: 48px 0 40px;
+      }
+
+      .cta-final-title {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 10px;
+      }
+
+      .cta-final-sub {
+        font-size: 14px;
+        color: var(--fg-soft);
+        margin-bottom: 18px;
+      }
+
+      /* === DEV CONSOLE (chat + mic) === */
+
+      .dev-console-section {
+        padding: 32px 0 40px;
+      }
+
+      .dev-console-card {
+        border-radius: 20px;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: rgba(15, 23, 42, 0.96);
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.85);
+        padding: 16px 18px;
+        margin-top: 8px;
+      }
+
+      .dev-console-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+        gap: 16px;
+      }
+
+      .dev-console-chat {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      #chat-messages {
+        border-radius: 14px;
+        border: 1px solid rgba(31, 41, 55, 0.95);
+        background: radial-gradient(
+            circle at 0 0,
+            rgba(37, 99, 235, 0.2),
+            transparent 55%
+          ),
+          rgba(15, 23, 42, 0.98);
+        padding: 10px 12px;
+        height: 220px;
+        overflow-y: auto;
+        font-size: 13px;
+      }
+
+      .message {
+        margin-bottom: 6px;
+        padding: 6px 8px;
+        border-radius: 8px;
+      }
+
       .message.user {
-        margin-left: auto;
-        text-align: right;
+        background: rgba(37, 99, 235, 0.16);
       }
 
-      .message.orlem .msg-label {
-        color: #a5b4fc;
+      .message.orlem {
+        background: rgba(22, 163, 74, 0.12);
       }
 
-      .message.user .msg-label {
-        color: #fbbf24;
+      .message.system {
+        background: rgba(15, 23, 42, 0.9);
+        color: var(--fg-soft);
       }
 
       .msg-label {
         font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
+        opacity: 0.75;
         margin-bottom: 2px;
-        color: var(--text-soft);
       }
 
-      .message > div:last-child {
-        border-radius: 14px;
-        padding: 8px 11px;
-        font-size: 13px;
-        line-height: 1.5;
-        background: rgba(15, 23, 42, 0.95);
-        border: 1px solid rgba(148, 163, 184, 0.35);
-      }
-
-      .message.user > div:last-child {
-        background: radial-gradient(
-          circle at 0 0,
-          rgba(56, 189, 248, 0.3),
-          rgba(15, 23, 42, 0.95)
-        );
-        border-color: rgba(56, 189, 248, 0.7);
-      }
-
-      .message.orlem > div:last-child {
-        background: radial-gradient(
-          circle at 100% 0,
-          rgba(129, 140, 248, 0.32),
-          rgba(15, 23, 42, 0.95)
-        );
-        border-color: rgba(129, 140, 248, 0.8);
-      }
-
-      .connection-status {
-        font-size: 11px;
-        color: var(--text-soft);
-        opacity: 0.9;
-        padding: 0 18px 6px;
-      }
-
-      .input-row {
-        margin-top: 6px;
-        padding: 0 18px 14px;
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr) auto;
-        gap: 8px;
-        align-items: center;
-      }
-
-      .mic-btn {
-        width: 42px;
-        height: 42px;
-        border-radius: 999px;
-        border: 1px solid rgba(148, 163, 184, 0.4);
-        background: rgba(15, 23, 42, 0.95);
-        color: var(--text-soft);
-        cursor: pointer;
+      .dev-input-row {
         display: flex;
+        gap: 8px;
+        margin-top: 4px;
+      }
+
+      #user-input {
+        flex: 1;
+        border-radius: 12px;
+        border: 1px solid rgba(55, 65, 81, 0.9);
+        background: rgba(15, 23, 42, 0.98);
+        color: var(--fg-main);
+        padding: 8px 9px;
+        font-size: 13px;
+        resize: vertical;
+        min-height: 40px;
+        max-height: 80px;
+      }
+
+      #user-input:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.8);
+      }
+
+      #send-btn {
+        border-radius: 999px;
+        padding: 0 16px;
+        border: none;
+        font-size: 13px;
+        font-weight: 500;
+        background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+        color: #eff6ff;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      #send-btn:hover {
+        filter: brightness(1.05);
+      }
+
+      #btn-mic {
+        width: 40px;
+        height: 40px;
+        border-radius: 999px;
+        border: 1px solid rgba(55, 65, 81, 0.9);
+        background: rgba(15, 23, 42, 0.98);
+        color: #f97316;
+        cursor: pointer;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
         font-size: 18px;
       }
 
-      .mic-btn.recording {
+      #btn-mic.recording {
         border-color: #f97316;
-        background: rgba(127, 29, 29, 0.96);
-        color: #fee2e2;
-        box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.7);
+        box-shadow: 0 0 0 4px rgba(248, 113, 22, 0.3);
+        background: rgba(67, 20, 7, 0.95);
       }
 
-      #user-input {
-        width: 100%;
-        min-height: 42px;
-        max-height: 90px;
-        resize: vertical;
-        border-radius: 999px;
-        border: 1px solid rgba(148, 163, 184, 0.55);
+      .dev-console-side {
+        font-size: 12px;
+        color: var(--fg-soft);
+        border-radius: 14px;
+        border: 1px dashed rgba(148, 163, 184, 0.5);
+        padding: 10px 12px;
         background: rgba(15, 23, 42, 0.96);
-        padding: 9px 14px;
-        font-size: 13px;
-        color: var(--text-main);
-        outline: none;
       }
 
-      #user-input::placeholder {
-        color: rgba(148, 163, 184, 0.9);
+      .dev-console-side strong {
+        color: var(--fg-strong);
       }
 
-      #send-btn {
-        height: 42px;
-        padding: 0 16px;
-        border-radius: 999px;
-        border: none;
-        background: linear-gradient(135deg, #22c55e, #16a34a);
-        color: #022c22;
-        font-weight: 600;
-        font-size: 13px;
-        cursor: pointer;
-        box-shadow: 0 14px 40px rgba(21, 128, 61, 0.5);
-      }
+      /* === Footer === */
 
-      #send-btn:hover {
-        filter: brightness(1.03);
-      }
-
-      .input-meta {
-        padding: 0 18px 12px;
+      .footer {
+        border-top: 1px solid rgba(15, 23, 42, 0.9);
+        padding: 16px 0 22px;
         font-size: 11px;
-        color: var(--text-soft);
+        color: var(--fg-soft);
         display: flex;
         justify-content: space-between;
-        gap: 8px;
-      }
-
-      .pill-small {
-        border-radius: 999px;
-        border: 1px solid rgba(148, 163, 184, 0.4);
-        padding: 3px 8px;
-      }
-
-      /* ------- coluna direita (painel) ------- */
-
-      .panel-col {
-        display: flex;
-        flex-direction: column;
         gap: 12px;
       }
 
-      .panel-section {
-        padding-bottom: 12px;
-      }
-
-      .panel-header {
-        font-size: 13px;
-        font-weight: 600;
+      .footer-links {
         display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding-bottom: 4px;
+        gap: 12px;
+        flex-wrap: wrap;
       }
 
-      .panel-header span.count {
-        font-size: 11px;
-        color: var(--text-soft);
+      .footer a {
+        color: var(--fg-soft);
       }
 
-      .panel-empty {
-        font-size: 12px;
-        color: var(--text-soft);
-        padding: 6px 0 8px;
+      .footer a:hover {
+        color: var(--accent-soft);
       }
 
-      .panel-items {
-        font-size: 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
+      /* ============ RESPONSIVO ============ */
+
+      @media (max-width: 960px) {
+        .nav-links {
+          display: none;
+        }
+        .hero-grid,
+        .dashboard-section {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .hero-card-shell {
+          justify-content: flex-start;
+        }
+        .hero-card {
+          margin-top: 10px;
+        }
+        section {
+          padding: 32px 0;
+        }
+        .grid-4 {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .integrations-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .dev-console-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
       }
 
-      .panel-item {
-        border-radius: 12px;
-        border: 1px solid rgba(148, 163, 184, 0.5);
-        padding: 6px 9px;
-        background: rgba(15, 23, 42, 0.95);
+      @media (max-width: 640px) {
+        .shell {
+          padding: 0 16px;
+        }
+        .hero {
+          padding-top: 16px;
+        }
+        .hero-title {
+          font-size: 30px;
+        }
+        .hero-subtitle {
+          font-size: 14px;
+        }
+        .hero-ctas {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .hero-ctas .btn {
+          justify-content: center;
+        }
+        .grid-4 {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .integrations-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .footer {
+          flex-direction: column;
+          align-items: flex-start;
+        }
       }
     </style>
   </head>
+
   <body>
-    <div class="app-shell">
-      <!-- COLUNA ESQUERDA — logs / reuniões -->
-      <div class="sidebar-col">
-        <div class="card sidebar-card">
-          <div class="card-body">
-            <div class="sidebar-title">
-              <span>Reuniões salvas (JSONL)</span>
-              <button id="btn-reload-logs" class="sidebar-btn">
-                Recarregar logs
-              </button>
-            </div>
-            <div id="logs-list" class="sidebar-list"></div>
-          </div>
-        </div>
-
-        <div class="card sidebar-card">
-          <div class="card-body">
-            <div class="sidebar-title">
-              <span>Reuniões (Banco)</span>
-              <button id="btn-load-meetings" class="sidebar-btn">
-                Carregar reuniões
-              </button>
-            </div>
-            <div id="meetings-list" class="sidebar-list"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- COLUNA CENTRAL — reunião ao vivo -->
-      <div class="center-col">
-        <div class="card chat-card">
-          <div class="top-bar">
+    <div class="page">
+      <header class="shell">
+        <nav class="nav">
+          <div class="nav-left">
+            <div class="logo-mark"></div>
             <div>
-              <div class="session-label">
-                <span id="session-dot"></span>
-                <span id="ws-status-text">Conectando…</span>
-              </div>
-              <div id="session-label" class="session-label" style="margin-top:4px;">
-                sessão — ...
-              </div>
-            </div>
-
-            <div class="top-actions">
-              <button id="btn-summarize" class="chip-btn">
-                ↺ Resumo
-              </button>
-              <button id="btn-diarize" class="chip-btn">
-                👥 Diarizar
-              </button>
-              <button id="btn-end" class="chip-btn danger">
-                ⏹ Encerrar
-              </button>
+              <div class="logo-text-main">Orlem</div>
+              <div class="logo-sub">Seu cofundador de IA para decisões</div>
             </div>
           </div>
 
-          <div id="chat-messages" class="chat-messages"></div>
-
-          <div id="connection-status" class="connection-status"></div>
-
-          <div class="input-row">
-            <button
-              id="btn-mic"
-              class="mic-btn"
-              title="Clique para gravar/pausar áudio para o Orlem"
-            >
-              🎙
-            </button>
-
-            <textarea
-              id="user-input"
-              placeholder="Digite ou fale com o Orlem como se ele fosse um sócio na call…"
-            ></textarea>
-
-            <button id="send-btn">Enviar</button>
+          <div class="nav-links">
+            <a href="#como-funciona">Como funciona</a>
+            <a href="#beneficios">Benefícios</a>
+            <a href="#dashboards">Dashboard</a>
+            <a href="#integracoes">Integrações</a>
           </div>
 
-          <div class="input-meta">
-            <span class="pill-small">
-              Dica: chame pelo nome — “Orlem, o que você acha disso?”
-            </span>
-            <span>Enter para enviar</span>
+          <div class="nav-right">
+            <button class="btn btn-ghost">Entrar</button>
+            <button class="btn btn-primary">Experimentar</button>
           </div>
-        </div>
+        </nav>
+      </header>
+
+      <main>
+        <!-- HERO -->
+        <section class="hero shell">
+          <div class="hero-grid">
+            <div>
+              <div class="pill-badge">
+                <span class="pill-dot-live"></span>
+                <span>Revolucione suas reuniões</span>
+              </div>
+
+              <h1 class="hero-title">
+                Orlem — seu cofundador de IA para
+                <span class="accent">decisões melhores</span>
+              </h1>
+
+              <p class="hero-subtitle">
+                Participe das calls, deixe o Orlem registrar decisões, sugerir
+                próximos passos e organizar tudo em um painel simples para a
+                equipe. Sem templates, sem esforço extra.
+              </p>
+
+              <div class="hero-ctas">
+                <button class="btn btn-primary">
+                  Experimentar agora
+                  <span>➝</span>
+                </button>
+                <button class="btn btn-ghost">Ver demo</button>
+              </div>
+
+              <div class="hero-meta">
+                <span>Sem cartão de crédito.</span>
+                <span class="hero-meta-dot"></span>
+                <span>Comece em minutos.</span>
+                <span class="hero-meta-dot"></span>
+                <span>Convide sua equipe quando estiver pronto.</span>
+              </div>
+
+              <div class="trust-row">
+                <div class="trust-label">
+                  Empresas que já confiam em cofundadores de IA:
+                </div>
+                <div class="trust-pills">
+                  <span class="trust-pill">Times de produto em scale-ups</span>
+                  <span class="trust-pill">Consultorias B2B</span>
+                  <span class="trust-pill">Empresas SaaS</span>
+                  <span class="trust-pill">Agências digitais</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="hero-card-shell">
+              <div class="hero-card">
+                <div class="hero-card-header">
+                  <span>Orlem ouvindo sua call em tempo real</span>
+                  <span>Sprint Q1 • 5 decisões • 8 ações</span>
+                </div>
+                <div class="hero-card-badge-row">
+                  <span class="chip green">5 decisões confirmadas</span>
+                  <span class="chip orange">Próximos passos definidos</span>
+                </div>
+                <div class="hero-card-body-title">
+                  Live insights — Sprint Q1
+                </div>
+                <div class="hero-card-body-text">
+                  O time decidiu priorizar a nova área de analytics, reduzir
+                  débitos técnicos críticos e testar a campanha PLG focada em
+                  trials pagos.
+                </div>
+                <div class="hero-card-body-text">
+                  Orlem já separou
+                  <strong style="color:#e5e7eb;">tarefas por dono</strong>,
+                  riscos sinalizados e pendências para a próxima reunião.
+                </div>
+                <div class="hero-card-footer">
+                  PDF de resumo em 30 segundos após o fim da call. |
+                  <a href="#dashboards">Ver painel completo</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- COMO FUNCIONA -->
+        <section id="como-funciona" class="shell">
+          <h2 class="section-title">Como funciona</h2>
+          <p class="section-subtitle">
+            O Orlem transforma cada reunião em insights acionáveis. Ele entra
+            nas calls como um membro silencioso da equipe: escuta, entende,
+            registra e organiza tudo automaticamente.
+          </p>
+
+          <div class="grid-4">
+            <div class="feature-card">
+              <div class="feature-icon">🎙</div>
+              <div class="feature-title">Escuta e entende</div>
+              <div class="feature-text">
+                O Orlem captura contexto, decisões implícitas e argumentos
+                importantes. Não é só transcrição — é entendimento da conversa.
+              </div>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon">📝</div>
+              <div class="feature-title">Transcreve em tempo real</div>
+              <div class="feature-text">
+                Diarização por participante, marcação de tópicos e trilhas
+                específicas para cada projeto e squad.
+              </div>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon">✅</div>
+              <div class="feature-title">Sugere próximos passos</div>
+              <div class="feature-text">
+                A IA propõe ações concretas, responsáveis e prazos — prontos
+                para virar tarefas no seu stack atual.
+              </div>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon">📊</div>
+              <div class="feature-title">Organiza automaticamente</div>
+              <div class="feature-text">
+                Cada reunião gera um painel com resumo, decisões, ações e
+                histórico. Fácil de revisar, apresentar e compartilhar.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- BENEFÍCIOS + DASHBOARD -->
+        <section id="beneficios" class="shell">
+          <div class="dashboard-section">
+            <div>
+              <h2 class="section-title">Para equipes que valorizam cada decisão</h2>
+              <p class="section-subtitle">
+                O Orlem não é apenas um gravador. É um membro da equipe que
+                pensa, sugere e organiza — ajudando seu time a manter o foco no
+                que realmente importa.
+              </p>
+
+              <ul style="list-style:none; padding:0; margin:0 0 16px; font-size:13px; color:var(--fg-soft);">
+                <li>• Nunca perca uma decisão importante</li>
+                <li>• Reduza tempo em reuniões improdutivas</li>
+                <li>• Mantenha toda a equipe alinhada</li>
+                <li>• Crie conhecimento organizacional automaticamente</li>
+                <li>• Integre com suas ferramentas existentes</li>
+              </ul>
+
+              <button class="btn btn-primary">Ver como funciona na prática</button>
+            </div>
+
+            <div id="dashboards">
+              <div class="dash-card">
+                <div class="dash-header">
+                  <span>Projeto — Product Team Q1</span>
+                  <span>12 reuniões • Zoom / Meet</span>
+                </div>
+                <div class="dash-title">Sprint Planning Q1</div>
+                <div class="dash-subtext">
+                  Esta reunião focou em definir as prioridades do Q1 2024. A
+                  equipe decidiu priorizar a feature de analytics, aumentar o
+                  time de frontend e expandir o orçamento de marketing.
+                </div>
+
+                <div class="dash-stats-row">
+                  <div class="dash-stat">
+                    <span>Decisões</span>
+                    <strong>5</strong>
+                    <span>Confirmadas e registradas</span>
+                  </div>
+                  <div class="dash-stat">
+                    <span>Ações</span>
+                    <strong>8</strong>
+                    <span>Com dono e prazo</span>
+                  </div>
+                </div>
+
+                <div class="dash-stats-row">
+                  <div class="dash-stat">
+                    <span>Riscos</span>
+                    <strong>3</strong>
+                    <span>Com plano de mitigação</span>
+                  </div>
+                  <div class="dash-stat">
+                    <span>Sentimento</span>
+                    <strong>Positivo</strong>
+                    <span>Alinhamento do time</span>
+                  </div>
+                </div>
+
+                <div class="dash-footer">
+                  Exporte como PDF em um clique ou sincronize com ferramentas de
+                  tarefas já usadas pela sua equipe.
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- INTEGRAÇÕES -->
+        <section id="integracoes" class="shell">
+          <h2 class="section-title">Integrações que encaixam no seu fluxo</h2>
+          <p class="section-subtitle">
+            Conecte o Orlem às ferramentas que sua empresa já usa hoje. Ele
+            entra silenciosamente nas calls, organiza tudo nos bastidores e
+            entrega clareza para o time inteiro.
+          </p>
+
+          <div class="integrations-grid">
+            <div class="integration-card">
+              <div class="integration-name">
+                Zoom
+                <span class="integration-tag">Em breve</span>
+              </div>
+              <div class="integration-text">
+                O Orlem participa automaticamente das reuniões agendadas e
+                envia o resumo para o seu painel em poucos minutos.
+              </div>
+            </div>
+
+            <div class="integration-card">
+              <div class="integration-name">
+                Google Meet
+                <span class="integration-tag">Planejado</span>
+              </div>
+              <div class="integration-text">
+                Conecte seu Google Calendar para o Orlem acompanhar as calls
+                mais importantes da semana.
+              </div>
+            </div>
+
+            <div class="integration-card">
+              <div class="integration-name">
+                Slack / Notion
+                <span class="integration-tag">Explorando</span>
+              </div>
+              <div class="integration-text">
+                Envie decisões, próximos passos e resumos diretamente para os
+                canais onde o trabalho realmente acontece.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- CONSOLE DE REUNIÃO (DEV) -->
+        <section class="shell dev-console-section">
+          <h2 class="section-title">Console de reunião (dev)</h2>
+          <p class="section-subtitle">
+            Área só para testes locais. Fala “Orlem, …” pelo microfone ou
+            digita na caixa abaixo. O backend é o mesmo que depois vai atender
+            o app e as integrações reais.
+          </p>
+
+          <div class="dev-console-card">
+            <div class="dev-console-grid">
+              <div class="dev-console-chat">
+                <div id="chat-messages"></div>
+
+                <div class="dev-input-row">
+                  <textarea
+                    id="user-input"
+                    placeholder="Digite aqui ou clique no microfone e fale “Orlem, …”"
+                  ></textarea>
+                  <button id="send-btn">Enviar</button>
+                  <button id="btn-mic" title="Segurar para falar">
+                    🎙
+                  </button>
+                </div>
+              </div>
+
+              <div class="dev-console-side">
+                <strong>Como funciona esse console:</strong>
+                <br /><br />
+                • O botão de microfone grava seu áudio e manda para o endpoint
+                <code>/stt</code>.<br />
+                • O texto transcrito é enviado pelo WebSocket para o Orlem.<br />
+                • Se você chamar pelo nome (“Orlem, …”), ele responde ao vivo e
+                a voz vem do endpoint <code>/speak</code>.<br />
+                • Toda a sessão é registrada em logs e associada a uma
+                reunião&nbsp;no&nbsp;backend.
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- === Status do WebSocket (necessário para client.js) === -->
+      <div
+        id="connection-bar"
+        style="
+          display:flex;
+          gap:8px;
+          align-items:center;
+          margin-top:8px;
+          color:#fff;
+          padding:0 20px 12px;
+        "
+        class="shell"
+      >
+        <div
+          id="session-dot"
+          style="
+            width:10px;
+            height:10px;
+            border-radius:50%;
+            background:#f97316;
+            box-shadow:0 0 8px rgba(249,115,22,0.6);
+          "
+        ></div>
+
+        <span id="ws-status-text">Conectando…</span>
+        <span
+          id="connection-status"
+          style="font-size:12px; opacity:0.8; margin-left:8px;"
+        ></span>
+        <span
+          id="session-label"
+          style="font-size:12px; opacity:0.8; margin-left:auto;"
+        >
+          sessão — ...
+        </span>
       </div>
 
-      <!-- COLUNA DIREITA — painel da reunião -->
-      <div class="panel-col">
-        <div class="card">
-          <div class="card-body">
-            <div class="panel-section">
-              <div class="panel-header">
-                <span>Resumo parcial</span>
-                <span id="panel-summary-count" class="count">0 blocos</span>
-              </div>
-              <div id="panel-summary-empty" class="panel-empty">
-                Ainda não há resumo. Peça:
-                <em>“Orlem, faz um resumo rápido até agora.”</em>
-              </div>
-              <div id="panel-summary-items" class="panel-items"></div>
-            </div>
-
-            <div class="panel-section">
-              <div class="panel-header">
-                <span>Decisões</span>
-                <span id="panel-decisions-count" class="count">0 itens</span>
-              </div>
-              <div id="panel-decisions-empty" class="panel-empty">
-                Nenhuma decisão registrada ainda.
-              </div>
-              <div id="panel-decisions-items" class="panel-items"></div>
-            </div>
-
-            <div class="panel-section">
-              <div class="panel-header">
-                <span>Próximos passos</span>
-                <span id="panel-actions-count" class="count">0 tarefas</span>
-              </div>
-              <div id="panel-actions-empty" class="panel-empty">
-                Sem próximos passos ainda. Você pode pedir:
-                <em>“Orlem, transforma isso em tarefas.”</em>
-              </div>
-              <div id="panel-actions-items" class="panel-items"></div>
-            </div>
-
-            <div class="panel-section">
-              <div class="panel-header">
-                <span>Diarização</span>
-                <span id="panel-diarize-count" class="count">0 blocos</span>
-              </div>
-              <div id="panel-diarize-empty" class="panel-empty">
-                Quando quiser ver por falante, clique em “Diarizar”.
-              </div>
-              <div id="panel-diarize-items" class="panel-items"></div>
-            </div>
-          </div>
+      <footer class="shell footer">
+        <div>© Orlem — IA para decisões melhores.</div>
+        <div class="footer-links">
+          <a href="#">Sobre</a>
+          <a href="#">Blog</a>
+          <a href="#">Privacidade</a>
+          <a href="#">Termos</a>
         </div>
-      </div>
+      </footer>
     </div>
 
-    <script src="/web/client.js"></script>
+    <!-- JS do Hub / chat / mic -->
+    <script src="/web/client.js" defer></script>
   </body>
 </html>
