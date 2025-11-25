@@ -6,3 +6,4 @@ python-dotenv
 websockets
 aiohttp
 requests
+sqlalchemy
