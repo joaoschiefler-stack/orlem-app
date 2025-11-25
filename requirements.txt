@@ -7,3 +7,4 @@ websockets
 aiohttp
 requests
 sqlalchemy
+python-multipart
